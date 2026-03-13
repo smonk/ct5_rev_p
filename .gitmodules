@@ -1,0 +1,6 @@
+[submodule "my_fx"]
+	path = my_fx
+	url = https://github.com/smonk/my_fx
+[submodule "hope_hal"]
+	path = hope_hal
+	url = https://github.com/smonk/hope_hal
