@@ -28,7 +28,8 @@ extern "C" {
 
 /* Includes ------------------------------------------------------------------*/
 #include "stm32h7xx_hal.h"
-
+#include "stm32h7xx_hal_sd.h"
+#include "stm32h7xx_hal_sdram.h"
 #include "stm32h7xx_ll_adc.h"
 #include "stm32h7xx_ll_i2c.h"
 #include "stm32h7xx_ll_spi.h"
@@ -75,7 +76,7 @@ void Error_Handler(void);
 /* Private defines -----------------------------------------------------------*/
 
 /* USER CODE BEGIN Private defines */
-
+#define HOPE_CT5
 /* USER CODE END Private defines */
 
 #ifdef __cplusplus

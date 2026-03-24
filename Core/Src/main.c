@@ -22,6 +22,7 @@
 #include "i2c.h"
 #include "i2s.h"
 #include "octospi.h"
+// #include "sdmmc.h"
 #include "spi.h"
 #include "tim.h"
 #include "usart.h"
@@ -29,7 +30,20 @@
 
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
+#define HOPE_CT5
+#define HOPE_CT5_P_NUM_BTN_AND_SW ( 6 + 1 + 1 + 2 + 3 )
+#define HOPE_CT5_P_NUM_POT_AND_CVIN ( 4 + 1 + 1 )
+#define HOPE_CT5_P_NUM_PWM_RGB_LEDS ( 1 )
 
+#include "hope_hal.h"
+#define EMBEDDED_CLI_IMPL
+#include "embedded_cli.h"
+#include "my_fx_common.h"
+#include "my_fx_pass_through.h"
+
+#include "midi.h"
+
+// #include "dma.h"
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -48,6 +62,69 @@
 /* USER CODE END PM */
 
 /* Private variables ---------------------------------------------------------*/
+/* Private variables ---------------------------------------------------------*/
+/* io structs */
+//internal button and switch
+hope_btn_and_sw_struct my_btn_and_sw[ HOPE_CT5_P_NUM_BTN_AND_SW ];
+
+//internal pots and cv
+hope_pot_and_cvin_struct my_pot_and_cvin[ HOPE_CT5_P_NUM_POT_AND_CVIN ];
+
+//dac
+// hope_dac_struct my_dac[ HOPE_CT5_P_NUM_EXT_DAC ];
+
+//rgb led via pwm
+// hope_ext_rgb_led_struct my_ext_rgb_led[ HOPE_856_NUM_EXT_RGB_LEDS ];
+hope_pwm_rgb_led_struct my_pwm_rgb_led[ HOPE_CT5_P_NUM_PWM_RGB_LEDS ];
+
+/* for ls data port/packet */
+
+//data packet tx
+hope_data_packet_struct tx_data_packet_struct_0;
+hope_data_packet_struct * my_ls_tx_data_packet = & tx_data_packet_struct_0;
+
+//data packet rx buffer
+hope_data_packet_struct rx_data_packet_struct_0;
+hope_data_packet_struct * my_ls_rx_data_packet = & rx_data_packet_struct_0;
+
+//this is so the cli can use dma instead of sending 1 char every transmission
+hope_data_packet_struct tx_data_packet_struct_1;
+hope_data_packet_struct * my_tx_data_packet_for_general_cli = & tx_data_packet_struct_1;
+
+//for embedded cli
+EmbeddedCli *cli = NULL;//
+
+
+
+/* for midi port */
+hope_midi_buffer_struct midi_tx_buffer;
+hope_midi_buffer_struct * my_midi_tx_buffer = & midi_tx_buffer;
+
+hope_midi_buffer_struct midi_rx_buffer;
+hope_midi_buffer_struct * my_midi_rx_buffer = & midi_rx_buffer;
+
+
+/*for patching i2s data to dsp algorithms */
+hope_dsp_buffer_struct dsp_buffer_struct_0;
+hope_dsp_buffer_struct * my_input_dsp_buffer = & dsp_buffer_struct_0;
+
+hope_dsp_buffer_struct dsp_buffer_struct_1;
+hope_dsp_buffer_struct * my_output_dsp_buffer = & dsp_buffer_struct_1;
+
+/* ticks */
+
+//for systick
+uint8_t my_tick_flag = 0;
+uint32_t my_tick_count;
+uint8_t my_tick_expired;
+
+//for codec dma/dsp
+uint8_t my_tx_tick_flag = 1;
+uint8_t my_rx_tick_flag = 1;
+uint8_t my_i2s_tick_expired = 0;
+uint8_t my_i2s_tick_count = 0;
+
+
 
 /* USER CODE BEGIN PV */
 
@@ -57,6 +134,7 @@
 void SystemClock_Config(void);
 void PeriphCommonClock_Config(void);
 static void MPU_Config(void);
+void MX_DMA_Init(void);
 /* USER CODE BEGIN PFP */
 
 /* USER CODE END PFP */
@@ -99,27 +177,205 @@ int main(void)
 
   /* USER CODE END SysInit */
 
-  /* Initialize all configured peripherals */
-  MX_GPIO_Init();
-  MX_ADC1_Init();
-  MX_I2C1_Init();
-  MX_I2S1_Init();
-  MX_OCTOSPI1_Init();
-  MX_TIM4_Init();
-  MX_USART1_UART_Init();
-  MX_USART3_UART_Init();
-  MX_SPI4_Init();
-  /* USER CODE BEGIN 2 */
+	/* Initialize all configured peripherals */
+	// MX_GPIO_Init();
+	// MX_ADC1_Init();
+	// MX_I2C1_Init();
+	// MX_I2S1_Init();
+	// MX_OCTOSPI1_Init();
+	// MX_TIM4_Init();
+	// MX_USART1_UART_Init();
+	// MX_USART3_UART_Init();
+	// MX_SPI4_Init();
+	MX_DMA_Init();
 
-  /* USER CODE END 2 */
+	/* USER CODE BEGIN 2 */
+  __enable_irq();
+	//uses timer 6 as a system tick
+	hope_timer_as_tick_init();
+
+	//sets up the gpios
+	hope_btn_and_sw_init();
+
+	//init the button struct for ct5
+	hope_ct5_btn_and_sw_init( my_btn_and_sw );
+
+  //sets up the pwm hardware gpios and timer for rgb leds
+  // hope_pwm_rgb_led_init();
+  hope_pwm_rgb_test_just_as_gpio();
+
+  //init the led struct for the pwm rgb leds
+  
+	//for debug, only 2 leds on this one
+	hope_dgb_btn_and_led_init();
+
+
+	//the ls data port
+	hope_ls_data_port_init();
+	hope_ls_data_packet_tx_buffer_init( my_ls_tx_data_packet ); // it is already a pointer
+	hope_ls_data_packet_rx_buffer_init( my_ls_rx_data_packet );
+	hope_ls_cli_tx_buffer_init( my_tx_data_packet_for_general_cli );
+
+	//sets up the embedded cli
+	EmbeddedCliConfig *config = embeddedCliDefaultConfig();
+	config->maxBindingCount = 16;
+	cli = embeddedCliNew(config);
+	cli->writeChar = write_char_to_dma_buffer;
+	init_cli_bindings();
+
+    /* midi init */
+
+    //sets up the gpio and the dma tx/rx of the uart
+    hope_midi_init();
+
+    //initialize the midi buffers
+    hope_midi_tx_buffer_init( my_midi_tx_buffer ); //we dont need this but do it for compatibility
+    hope_midi_rx_buffer_init( my_midi_rx_buffer );
+
+    //turn on the rx dma
+    hope_midi_rx_dma_receive_enable();
+
+    //this is the init function from libmidi, we use that to recieve midi
+    midi_init();
+
+    //register the callbacks
+    hope_midi_register_callbacks();
+
+
+    //this is for setting up the cli
+    hope_ls_data_port_rx_dma_receive_enable();
+    embeddedCliProcess(cli);
+
+    /* memories init */
+
+    //qspi sram init - gpios and peripheral
+    hope_qspi_ram_init();
+
+    hope_qspi_ram_test();
+    //now initialize the apm6404 chip
+
+
+    /* i2c init of codec */
+    // this function configures the i2c hardware on the hope processor but does not initialize the actual codec. 
+    hope_codec_ctl_port_init();
+
+    // initializes a specific codec
+    hope_codec_ctl_port_tac5112_init();
+
+    /* i2s init */
+    hope_codec_stream_port_init();
+
+    /*dsp buffers init */
+    hope_dsp_init_input_buffer( my_input_dsp_buffer );
+    hope_dsp_init_output_buffer( my_output_dsp_buffer );
+
+    //starts the audio stream
+    hope_codec_stream_port_start_duplex_communication();
+
+
+
+	/* USER CODE END 2 */
+ 
+
+  hope_dbg_btn_and_led_led_on(1);
+  hope_dbg_btn_and_led_led_off(2);
+  
+  uint32_t n = 0;
+  uint32_t N = 100;
+
+  while (1)
+  {
+    while( ( my_tx_tick_flag  == 1 ) || ( my_rx_tick_flag == 1 ) ){};
+    my_tx_tick_flag = 1;
+    my_rx_tick_flag = 1;
+    my_i2s_tick_count++;
+
+    n++;
+    if( n > N )
+    {
+      n = 0;
+      // HAL_GPIO_TogglePin( GPIOD, GPIO_PIN_3 );
+      hope_dbg_btn_and_led_led_toggle(1);
+      hope_dbg_btn_and_led_led_toggle(2);
+
+    }
+
+    //the dsp function
+    my_fx_pass_through( my_input_dsp_buffer, my_output_dsp_buffer );
+
+    //scans the buttons local to hope processor
+    hope_btn_and_sw_update( my_btn_and_sw );
+
+    //midi rx and process
+    hope_midi_read_all_pending_bytes( my_midi_rx_buffer );
+
+    //for the terminal, this function handles periodic rx and tx    
+    hope_port_uart_cli_test( cli, my_ls_rx_data_packet );
+  
+  }
+
+
 
   /* Infinite loop */
   /* USER CODE BEGIN WHILE */
+  //for internal systick testing
+  uint32_t i = 0;
   while (1)
   {
-    /* USER CODE END WHILE */
+    while( my_tick_flag  == 1 ){}; 
 
-    /* USER CODE BEGIN 3 */
+    my_tick_flag = 1;
+    my_tick_count++;
+
+    n++;
+    if( n > N )
+    {
+      n = 0;
+      hope_dbg_btn_and_led_led_toggle(1);
+      hope_dbg_btn_and_led_led_toggle(2);
+
+      i++;
+      if( i > 2 )
+      {
+        i = 0;
+      }
+
+      //clear gpiod pin 12 13 14 with ll driver
+      LL_GPIO_ResetOutputPin( GPIOD, LL_GPIO_PIN_12 | LL_GPIO_PIN_13 | LL_GPIO_PIN_14 );
+
+      switch( i )
+      {
+      case 0:
+        //set gpiod pin 12 to high with ll gpio driver
+        LL_GPIO_SetOutputPin( GPIOD, LL_GPIO_PIN_12 );
+                    // LL_GPIO_SetOutputPin( GPIOD, LL_GPIO_PIN_14 );
+        break;
+
+      case 1:
+        //set gpiod pin 13 to low with ll gpio driver
+        LL_GPIO_SetOutputPin( GPIOD, LL_GPIO_PIN_13 );
+        break;
+
+      case 2:
+        //set gpiod pin 14 to high with ll gpio driver
+        LL_GPIO_SetOutputPin( GPIOD, LL_GPIO_PIN_14 );
+        break;
+
+      }
+
+
+    }
+
+    //a function to test if the rgb led is working properly
+    hope_ct5_pwm_rgb_leds_driver( my_pwm_rgb_led );
+
+    //test cli
+    hope_port_uart_cli_test( cli, my_ls_rx_data_packet );
+
+    //the button and switch tick/update
+    hope_btn_and_sw_update( my_btn_and_sw );
+
+
   }
   /* USER CODE END 3 */
 }
@@ -221,14 +477,53 @@ void PeriphCommonClock_Config(void)
 void MPU_Config(void)
 {
 
-  /* Disables the MPU */
-  LL_MPU_Disable();
+  MPU_Region_InitTypeDef MPU_InitStruct;
 
-  /** Initializes and configures the Region and the memory to be protected
-  */
-  LL_MPU_ConfigRegion(LL_MPU_REGION_NUMBER0, 0x87, 0x0, LL_MPU_REGION_SIZE_4GB|LL_MPU_TEX_LEVEL0|LL_MPU_REGION_NO_ACCESS|LL_MPU_INSTRUCTION_ACCESS_DISABLE|LL_MPU_ACCESS_SHAREABLE|LL_MPU_ACCESS_NOT_CACHEABLE|LL_MPU_ACCESS_NOT_BUFFERABLE);
-  /* Enables the MPU */
-  LL_MPU_Enable(LL_MPU_CTRL_PRIVILEGED_DEFAULT);
+  /* Disable the MPU */
+  HAL_MPU_Disable();
+
+  /* Configure the MPU as Strongly ordered for not defined regions */
+  MPU_InitStruct.Enable = MPU_REGION_ENABLE;
+  MPU_InitStruct.BaseAddress = 0x00;
+  MPU_InitStruct.Size = MPU_REGION_SIZE_4GB;
+  MPU_InitStruct.AccessPermission = MPU_REGION_NO_ACCESS;
+  MPU_InitStruct.IsBufferable = MPU_ACCESS_NOT_BUFFERABLE;
+  MPU_InitStruct.IsCacheable = MPU_ACCESS_NOT_CACHEABLE;
+  MPU_InitStruct.IsShareable = MPU_ACCESS_SHAREABLE;
+  MPU_InitStruct.Number = MPU_REGION_NUMBER0;
+  MPU_InitStruct.TypeExtField = MPU_TEX_LEVEL0;
+  MPU_InitStruct.SubRegionDisable = 0x87;
+  MPU_InitStruct.DisableExec = MPU_INSTRUCTION_ACCESS_DISABLE;
+
+  HAL_MPU_ConfigRegion(&MPU_InitStruct);
+
+  MPU_InitStruct.Enable = MPU_REGION_ENABLE;
+  MPU_InitStruct.BaseAddress = 0x90000000;
+  MPU_InitStruct.Size = MPU_REGION_SIZE_8MB;
+  MPU_InitStruct.AccessPermission = MPU_REGION_FULL_ACCESS;
+  MPU_InitStruct.IsBufferable = MPU_ACCESS_NOT_BUFFERABLE;
+  MPU_InitStruct.IsCacheable = MPU_ACCESS_CACHEABLE;
+  MPU_InitStruct.IsShareable = MPU_ACCESS_NOT_SHAREABLE;
+  MPU_InitStruct.Number = MPU_REGION_NUMBER1;
+  MPU_InitStruct.TypeExtField = MPU_TEX_LEVEL0;
+  MPU_InitStruct.SubRegionDisable = 0x0;
+  MPU_InitStruct.DisableExec = MPU_INSTRUCTION_ACCESS_ENABLE;
+  
+  HAL_MPU_ConfigRegion(&MPU_InitStruct);
+  /* Enable the MPU */
+  HAL_MPU_Enable(MPU_PRIVILEGED_DEFAULT);
+  // /* Disables the MPU */
+  // LL_MPU_Disable();
+
+  // /** Initializes and configures the Region and the memory to be protected
+  // */
+  // LL_MPU_ConfigRegion(LL_MPU_REGION_NUMBER0, 0x87, 0x0, LL_MPU_REGION_SIZE_4GB|LL_MPU_TEX_LEVEL0|LL_MPU_REGION_NO_ACCESS|LL_MPU_INSTRUCTION_ACCESS_DISABLE|LL_MPU_ACCESS_SHAREABLE|LL_MPU_ACCESS_NOT_CACHEABLE|LL_MPU_ACCESS_NOT_BUFFERABLE);
+  
+  // LL_MPU_ConfigRegion(
+  //     LL_MPU_REGION_NUMBER1, 0x87, 0x0, LL_MPU_REGION_SIZE_8MB|LL_MPU_TEX_LEVEL0|LL_MPU_REGION_FULL_ACCESS|LL_MPU_INSTRUCTION_ACCESS_DISABLE|LL_MPU_ACCESS_SHAREABLE|LL_MPU_ACCESS_NOT_CACHEABLE|LL_MPU_ACCESS_NOT_BUFFERABLE);
+  
+  // /* Enables the MPU */
+  // LL_MPU_Enable(LL_MPU_CTRL_PRIVILEGED_DEFAULT);
 
 }
 
@@ -263,3 +558,56 @@ void assert_failed(uint8_t *file, uint32_t line)
   /* USER CODE END 6 */
 }
 #endif /* USE_FULL_ASSERT */
+
+void MX_DMA_Init(void)
+{
+
+  /* DMA controller clock enable */
+  __HAL_RCC_DMA1_CLK_ENABLE();
+  __HAL_RCC_DMA2_CLK_ENABLE();
+
+  /* DMA interrupt init */
+  /* DMA1_Stream0_IRQn interrupt configuration */
+  NVIC_SetPriority(DMA1_Stream0_IRQn, NVIC_EncodePriority(NVIC_GetPriorityGrouping(),0, 0));
+  NVIC_EnableIRQ(DMA1_Stream0_IRQn);
+  /* DMA1_Stream1_IRQn interrupt configuration */
+  NVIC_SetPriority(DMA1_Stream1_IRQn, NVIC_EncodePriority(NVIC_GetPriorityGrouping(),0, 0));
+  NVIC_EnableIRQ(DMA1_Stream1_IRQn);
+  /* DMA1_Stream2_IRQn interrupt configuration */
+  NVIC_SetPriority(DMA1_Stream2_IRQn, NVIC_EncodePriority(NVIC_GetPriorityGrouping(),0, 0));
+  NVIC_EnableIRQ(DMA1_Stream2_IRQn);
+  /* DMA1_Stream3_IRQn interrupt configuration */
+  NVIC_SetPriority(DMA1_Stream3_IRQn, NVIC_EncodePriority(NVIC_GetPriorityGrouping(),0, 0));
+  NVIC_EnableIRQ(DMA1_Stream3_IRQn);
+  /* DMA1_Stream4_IRQn interrupt configuration */
+  NVIC_SetPriority(DMA1_Stream4_IRQn, NVIC_EncodePriority(NVIC_GetPriorityGrouping(),0, 0));
+  NVIC_EnableIRQ(DMA1_Stream4_IRQn);
+  /* DMA1_Stream5_IRQn interrupt configuration */
+  NVIC_SetPriority(DMA1_Stream5_IRQn, NVIC_EncodePriority(NVIC_GetPriorityGrouping(),0, 0));
+  NVIC_EnableIRQ(DMA1_Stream5_IRQn);
+  /* DMA1_Stream6_IRQn interrupt configuration */
+  NVIC_SetPriority(DMA1_Stream6_IRQn, NVIC_EncodePriority(NVIC_GetPriorityGrouping(),0, 0));
+  NVIC_EnableIRQ(DMA1_Stream6_IRQn);
+  /* DMA1_Stream7_IRQn interrupt configuration */
+  NVIC_SetPriority(DMA1_Stream7_IRQn, NVIC_EncodePriority(NVIC_GetPriorityGrouping(),0, 0));
+  NVIC_EnableIRQ(DMA1_Stream7_IRQn);
+  /* DMA2_Stream0_IRQn interrupt configuration */
+  NVIC_SetPriority(DMA2_Stream0_IRQn, NVIC_EncodePriority(NVIC_GetPriorityGrouping(),0, 0));
+  NVIC_EnableIRQ(DMA2_Stream0_IRQn);
+  /* DMA2_Stream1_IRQn interrupt configuration */
+  NVIC_SetPriority(DMA2_Stream1_IRQn, NVIC_EncodePriority(NVIC_GetPriorityGrouping(),0, 0));
+  NVIC_EnableIRQ(DMA2_Stream1_IRQn);
+  /* DMA2_Stream2_IRQn interrupt configuration */
+  NVIC_SetPriority(DMA2_Stream2_IRQn, NVIC_EncodePriority(NVIC_GetPriorityGrouping(),0, 0));
+  NVIC_EnableIRQ(DMA2_Stream2_IRQn);
+  /* DMA2_Stream3_IRQn interrupt configuration */
+  NVIC_SetPriority(DMA2_Stream3_IRQn, NVIC_EncodePriority(NVIC_GetPriorityGrouping(),0, 0));
+  NVIC_EnableIRQ(DMA2_Stream3_IRQn);
+  /* DMA2_Stream4_IRQn interrupt configuration */
+  NVIC_SetPriority(DMA2_Stream4_IRQn, NVIC_EncodePriority(NVIC_GetPriorityGrouping(),0, 0));
+  NVIC_EnableIRQ(DMA2_Stream4_IRQn);
+  /* DMA2_Stream5_IRQn interrupt configuration */
+  NVIC_SetPriority(DMA2_Stream5_IRQn, NVIC_EncodePriority(NVIC_GetPriorityGrouping(),0, 0));
+  NVIC_EnableIRQ(DMA2_Stream5_IRQn);
+
+}

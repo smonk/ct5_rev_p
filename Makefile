@@ -78,8 +78,32 @@ Drivers/STM32H7xx_HAL_Driver/Src/stm32h7xx_ll_tim.c \
 Drivers/STM32H7xx_HAL_Driver/Src/stm32h7xx_ll_usart.c \
 Core/Src/system_stm32h7xx.c \
 Core/Src/sysmem.c \
-Core/Src/syscalls.c  
-
+Core/Src/syscalls.c  \
+hope_hal/hope_basic_leds.c \
+hope_hal/hope_btn_and_sw.c \
+hope_hal/hope_cli_bindings.c \
+hope_hal/hope_codec_ctl_port.c \
+hope_hal/hope_codec_stream_port.c \
+hope_hal/hope_dac.c \
+hope_hal/hope_dbg_btn_and_led.c \
+hope_hal/hope_dsp_interface.c \
+hope_hal/hope_hs_data_packet.c \
+hope_hal/hope_hs_data_port.c \
+hope_hal/hope_ls_data_packet.c \
+hope_hal/hope_ls_data_port.c \
+hope_hal/hope_midi.c \
+hope_hal/hope_pot_and_cvin.c \
+hope_hal/hope_qspi_flash.c \
+hope_hal/hope_rgb_leds.c \
+hope_hal/hope_sd_card.c \
+hope_hal/hope_sdram.c \
+hope_hal/hope_system_tick.c \
+hope_hal/hope_pwm_rgb_led.c \
+hope_hal/hope_qspi_ram.c \
+hope_hal/hope_spi_flash.c \
+my_fx/my_fx_pass_through.c \
+libmidi/midi.c
+#Core/Src/dma.c \
 # ASM sources
 ASM_SOURCES =  \
 startup_stm32h723xx.s
@@ -146,8 +170,11 @@ C_INCLUDES =  \
 -IDrivers/STM32H7xx_HAL_Driver/Inc \
 -IDrivers/STM32H7xx_HAL_Driver/Inc/Legacy \
 -IDrivers/CMSIS/Device/ST/STM32H7xx/Include \
--IDrivers/CMSIS/Include
-
+-IDrivers/CMSIS/Include \
+-Ihope_hal \
+-Iembedded-cli\
+-Imy_fx \
+-Ilibmidi
 
 # compile gcc flags
 ASFLAGS = $(MCU) $(AS_DEFS) $(AS_INCLUDES) $(OPT) -Wall -fdata-sections -ffunction-sections

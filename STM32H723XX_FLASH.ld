@@ -67,6 +67,7 @@ RAM_D2 (xrw)      : ORIGIN = 0x30000000, LENGTH = 32K
 RAM_D3 (xrw)      : ORIGIN = 0x38000000, LENGTH = 16K
 ITCMRAM (xrw)      : ORIGIN = 0x00000000, LENGTH = 64K
 FLASH (rx)      : ORIGIN = 0x8000000, LENGTH = 512K
+QSPI_SDRAM (xrw) : ORIGIN = 0x90000000, LENGTH = 8*1024*1024
 }
 
 /* Define output sections */
@@ -196,7 +197,20 @@ SECTIONS
     . = ALIGN(8);
   } >DTCMRAM
 
+  . = 0x30000000;
+  .sram_dma :
+  {
+  . = ALIGN(4);
+  *(.sram_dma);
+  . = ALIGN(4);
+  } >RAM_D2 AT> FLASH
 
+  . = 0x90000000;
+  .qspi_sdram (NOLOAD):
+  {
+  . = ALIGN(4);
+  *(.QSPI_SDRAM);
+  } >QSPI_SDRAM 
 
   /* Remove information from the standard libraries */
   /DISCARD/ :
