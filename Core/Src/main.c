@@ -111,6 +111,10 @@ hope_dsp_buffer_struct * my_input_dsp_buffer = & dsp_buffer_struct_0;
 hope_dsp_buffer_struct dsp_buffer_struct_1;
 hope_dsp_buffer_struct * my_output_dsp_buffer = & dsp_buffer_struct_1;
 
+/* for using spi flash dma */
+hope_spi_flash_buffer_struct * my_spi_flash_buffer = NULL;
+
+
 /* ticks */
 
 //for systick
@@ -201,11 +205,12 @@ int main(void)
 	hope_ct5_btn_and_sw_init( my_btn_and_sw );
 
   //sets up the pwm hardware gpios and timer for rgb leds
-  // hope_pwm_rgb_led_init();
-  hope_pwm_rgb_test_just_as_gpio();
+  hope_pwm_rgb_led_init();
+  // hope_pwm_rgb_test_just_as_gpio();
 
   //init the led struct for the pwm rgb leds
-  
+  hope_ct5_pwm_rgb_leds_init( my_pwm_rgb_led );
+
 	//for debug, only 2 leds on this one
 	hope_dgb_btn_and_led_init();
 
@@ -251,8 +256,15 @@ int main(void)
     //qspi sram init - gpios and peripheral
     hope_qspi_ram_init();
 
-    hope_qspi_ram_test();
     //now initialize the apm6404 chip
+    hope_qspi_ram_test();
+
+    // W25Q128JVSJM flash init
+    hope_spi_flash_init();
+
+    hope_spi_flash_buffer_init( my_spi_flash_buffer );
+
+    hope_spi_flash_driver( my_spi_flash_buffer );
 
 
     /* i2c init of codec */
@@ -279,7 +291,7 @@ int main(void)
 
   hope_dbg_btn_and_led_led_on(1);
   hope_dbg_btn_and_led_led_off(2);
-  
+  uint32_t i = 0;
   uint32_t n = 0;
   uint32_t N = 100;
 
@@ -297,7 +309,6 @@ int main(void)
       // HAL_GPIO_TogglePin( GPIOD, GPIO_PIN_3 );
       hope_dbg_btn_and_led_led_toggle(1);
       hope_dbg_btn_and_led_led_toggle(2);
-
     }
 
     //the dsp function
@@ -311,7 +322,11 @@ int main(void)
 
     //for the terminal, this function handles periodic rx and tx    
     hope_port_uart_cli_test( cli, my_ls_rx_data_packet );
+
+    //update led
+    // hope_ct5_pwm_rgb_leds_tick( my_pwm_rgb_led );
   
+    hope_ct5_pwm_rgb_leds_driver( my_pwm_rgb_led );
   }
 
 
@@ -319,7 +334,7 @@ int main(void)
   /* Infinite loop */
   /* USER CODE BEGIN WHILE */
   //for internal systick testing
-  uint32_t i = 0;
+
   while (1)
   {
     while( my_tick_flag  == 1 ){}; 
@@ -348,7 +363,6 @@ int main(void)
       case 0:
         //set gpiod pin 12 to high with ll gpio driver
         LL_GPIO_SetOutputPin( GPIOD, LL_GPIO_PIN_12 );
-                    // LL_GPIO_SetOutputPin( GPIOD, LL_GPIO_PIN_14 );
         break;
 
       case 1:
