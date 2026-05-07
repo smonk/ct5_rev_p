@@ -32,7 +32,7 @@
 /* USER CODE BEGIN Includes */
 #define HOPE_CT5
 #define HOPE_CT5_P_NUM_BTN_AND_SW ( 6 + 1 + 1 + 2 + 3 )
-#define HOPE_CT5_P_NUM_POT_AND_CVIN ( 4 + 1 + 1 )
+// #define HOPE_CT5_P_NUM_POT_AND_CVIN ( 4 + 1 )
 #define HOPE_CT5_P_NUM_PWM_RGB_LEDS ( 1 )
 
 #include "hope_hal.h"
@@ -246,7 +246,6 @@ int main(void)
     //register the callbacks
     hope_midi_register_callbacks();
 
-
     //this is for setting up the cli
     hope_ls_data_port_rx_dma_receive_enable();
     embeddedCliProcess(cli);
@@ -264,8 +263,13 @@ int main(void)
 
     hope_spi_flash_buffer_init( my_spi_flash_buffer );
 
-    hope_spi_flash_driver( my_spi_flash_buffer );
+    // hope_spi_flash_driver( my_spi_flash_buffer );
 
+    /* pot and cvin init */
+    //initializes the gpio, peripheral, and dma
+    pot_and_cvin_init();
+    //initializes the hope data structure
+    hope_ct5_pot_and_cvin_struct_init( my_pot_and_cvin );
 
     /* i2c init of codec */
     // this function configures the i2c hardware on the hope processor but does not initialize the actual codec. 
@@ -314,11 +318,14 @@ int main(void)
     //the dsp function
     my_fx_pass_through( my_input_dsp_buffer, my_output_dsp_buffer );
 
+    //start an adc conversion
+    hope_pot_and_cvin_start_dma_conversion();
+
     //scans the buttons local to hope processor
     hope_btn_and_sw_update( my_btn_and_sw );
 
     //midi rx and process
-    hope_midi_read_all_pending_bytes( my_midi_rx_buffer );
+    // hope_midi_read_all_pending_bytes( my_midi_rx_buffer );
 
     //for the terminal, this function handles periodic rx and tx    
     hope_port_uart_cli_test( cli, my_ls_rx_data_packet );
