@@ -22,7 +22,7 @@ TARGET = xyz_rev_p
 # debug build?
 DEBUG = 1
 # optimization
-OPT = -Og
+OPT = -O0
 
 
 #######################################
@@ -100,9 +100,15 @@ hope_hal/hope_sdram.c \
 hope_hal/hope_system_tick.c \
 hope_hal/hope_pwm_rgb_led.c \
 hope_hal/hope_qspi_ram.c \
+hope_hal/hope_relays.c \
 hope_hal/hope_spi_flash.c \
 my_fx/my_fx_pass_through.c \
-libmidi/midi.c
+libmidi/midi.c \
+ct5_fx/ct5_fx_ct5.c \
+ct5_fx/ct5_fx_m2r.c \
+ct5_fx/ct5_fx_m3t.c \
+ct5_fx/ct5_fx_q_tables.c \
+ct5_fx/ct5_fx_ctl_input.c 
 #Core/Src/dma.c \
 # ASM sources
 ASM_SOURCES =  \
@@ -174,7 +180,8 @@ C_INCLUDES =  \
 -Ihope_hal \
 -Iembedded-cli\
 -Imy_fx \
--Ilibmidi
+-Ilibmidi \
+-Ict5_fx
 
 # compile gcc flags
 ASFLAGS = $(MCU) $(AS_DEFS) $(AS_INCLUDES) $(OPT) -Wall -fdata-sections -ffunction-sections

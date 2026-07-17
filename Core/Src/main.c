@@ -30,10 +30,6 @@
 
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
-#define HOPE_CT5
-#define HOPE_CT5_P_NUM_BTN_AND_SW ( 6 + 1 + 1 + 2 + 3 )
-// #define HOPE_CT5_P_NUM_POT_AND_CVIN ( 4 + 1 )
-#define HOPE_CT5_P_NUM_PWM_RGB_LEDS ( 1 )
 
 #include "hope_hal.h"
 #define EMBEDDED_CLI_IMPL
@@ -43,6 +39,10 @@
 
 #include "midi.h"
 
+#include "ct5_buffer.h"
+#include "ct5_fx_ct5.h"
+#include "ct5_fx_m2r.h"
+#include "ct5_fx_m3t.h"
 // #include "dma.h"
 /* USER CODE END Includes */
 
@@ -65,17 +65,20 @@
 /* Private variables ---------------------------------------------------------*/
 /* io structs */
 //internal button and switch
-hope_btn_and_sw_struct my_btn_and_sw[ HOPE_CT5_P_NUM_BTN_AND_SW ];
+hope_btn_and_sw_struct my_btn_and_sw[ HOPE_NUM_BTN_AND_SW ];
 
 //internal pots and cv
-hope_pot_and_cvin_struct my_pot_and_cvin[ HOPE_CT5_P_NUM_POT_AND_CVIN ];
+hope_pot_and_cvin_struct my_pot_and_cvin[ HOPE_NUM_POTS_AND_CVIN ];
 
 //dac
 // hope_dac_struct my_dac[ HOPE_CT5_P_NUM_EXT_DAC ];
 
 //rgb led via pwm
 // hope_ext_rgb_led_struct my_ext_rgb_led[ HOPE_856_NUM_EXT_RGB_LEDS ];
-hope_pwm_rgb_led_struct my_pwm_rgb_led[ HOPE_CT5_P_NUM_PWM_RGB_LEDS ];
+hope_pwm_rgb_led_struct my_pwm_rgb_led[ HOPE_NUM_PWM_RGB_LEDS ];
+
+//relays
+hope_relay_struct my_relay[ HOPE_NUM_RELAYS ];
 
 /* for ls data port/packet */
 
@@ -114,6 +117,10 @@ hope_dsp_buffer_struct * my_output_dsp_buffer = & dsp_buffer_struct_1;
 /* for using spi flash dma */
 hope_spi_flash_buffer_struct * my_spi_flash_buffer = NULL;
 
+
+/* a global function pointer for what the led does when not bypassed */
+void (*hope_ct5_led_on_setting)( hope_pwm_rgb_led_struct * ) = NULL;
+void (*hope_ct5_led_off_setting)( hope_pwm_rgb_led_struct * ) = NULL;
 
 /* ticks */
 
@@ -195,6 +202,10 @@ int main(void)
 
 	/* USER CODE BEGIN 2 */
   __enable_irq();
+
+  //put the codec in reset 
+  hope_codec_ctl_port_enter_reset();
+
 	//uses timer 6 as a system tick
 	hope_timer_as_tick_init();
 
@@ -207,9 +218,17 @@ int main(void)
   //sets up the pwm hardware gpios and timer for rgb leds
   hope_pwm_rgb_led_init();
   // hope_pwm_rgb_test_just_as_gpio();
+  //set teh on off functions
+  hope_ct5_led_on_setting = hope_ct5_pwm_rgb_set_solid_blue;
+  hope_ct5_led_off_setting = hope_ct5_pwm_rgb_set_off;
 
   //init the led struct for the pwm rgb leds
   hope_ct5_pwm_rgb_leds_init( my_pwm_rgb_led );
+
+  //setup the relays
+  //sets up the gpios
+  hope_relay_init();
+  hope_relay_struct_init( my_relay );
 
 	//for debug, only 2 leds on this one
 	hope_dgb_btn_and_led_init();
@@ -258,6 +277,10 @@ int main(void)
     //now initialize the apm6404 chip
     hope_qspi_ram_test();
 
+    hope_qspi_ram_zero_out();
+    hope_qspi_ram_float_read_write_test();
+
+/* flash init */
     // W25Q128JVSJM flash init
     hope_spi_flash_init();
 
@@ -274,10 +297,9 @@ int main(void)
     /* i2c init of codec */
     // this function configures the i2c hardware on the hope processor but does not initialize the actual codec. 
     hope_codec_ctl_port_init();
-
     // initializes a specific codec
-    hope_codec_ctl_port_tac5112_init();
-
+   hope_codec_ctl_port_cs4270_init();
+   hope_codec_ctl_port_cs4270_on();
     /* i2s init */
     hope_codec_stream_port_init();
 
@@ -299,12 +321,20 @@ int main(void)
   uint32_t n = 0;
   uint32_t N = 100;
 
+  uint32_t time_out = 0;
+
   while (1)
   {
+    if(time_out)
+    {
+      while(1);
+    }
     while( ( my_tx_tick_flag  == 1 ) || ( my_rx_tick_flag == 1 ) ){};
     my_tx_tick_flag = 1;
     my_rx_tick_flag = 1;
     my_i2s_tick_count++;
+
+    time_out = 1;
 
     n++;
     if( n > N )
@@ -316,7 +346,10 @@ int main(void)
     }
 
     //the dsp function
-    my_fx_pass_through( my_input_dsp_buffer, my_output_dsp_buffer );
+    // my_fx_pass_through( my_input_dsp_buffer, my_output_dsp_buffer );
+    // ct5_fx_ct5( my_input_dsp_buffer, my_output_dsp_buffer );
+    ct5_fx_m2r( my_input_dsp_buffer, my_output_dsp_buffer );
+    // ct5_fx_m3t( my_input_dsp_buffer, my_output_dsp_buffer );
 
     //start an adc conversion
     hope_pot_and_cvin_start_dma_conversion();
@@ -333,7 +366,64 @@ int main(void)
     //update led
     // hope_ct5_pwm_rgb_leds_tick( my_pwm_rgb_led );
   
-    hope_ct5_pwm_rgb_leds_driver( my_pwm_rgb_led );
+    //this is the bypass functioanlity
+    static uint8_t bypass = 0;
+    if( my_btn_and_sw[7].pressed_event_flag )
+    {
+      //bypass = 1 means active effect
+      //bypass = 0 means bypassed
+      my_btn_and_sw[7].pressed_event_flag = 0;
+      if( bypass )
+      {
+        bypass = 0;
+      }
+      else
+      {
+        bypass = 1;
+      }
+      my_relay[0].current_state = bypass;
+      my_relay[1].current_state = bypass;
+
+      //now turn on or off the pwm leds based on bypass
+      // float temp_brightness = 0;
+      // if( bypass )
+      // {
+      //   temp_brightness = 0.75;
+      // }
+      // else
+      // {
+      //   temp_brightness = 0;
+      // }
+
+      // for( uint8_t i = 0; i < HOPE_NUM_EXT_PWM_LEDS; i++ )
+      // {
+      //   my_ext_pwm_led[i].target_brightness = temp_brightness;
+      //   my_ext_pwm_led[i].mode = PWM_LED_MODE_STATIC;
+
+      // }
+      
+
+    }
+    if(bypass)
+    {
+
+      // hope_ct5_pwm_rgb_leds_driver( my_pwm_rgb_led );
+      hope_ct5_led_on_setting( my_pwm_rgb_led );
+    }
+    else
+    {
+      // my_pwm_rgb_led[0].target_brightness[0] = 0;
+      // my_pwm_rgb_led[0].target_brightness[1] = 0;
+      // my_pwm_rgb_led[0].target_brightness[2] = 0;
+
+      hope_ct5_led_off_setting( my_pwm_rgb_led );
+    }
+    hope_ct5_pwm_rgb_leds_tick( my_pwm_rgb_led );
+
+    hope_relay_tick( my_relay );
+
+    time_out = 0;
+
   }
 
 
@@ -523,8 +613,8 @@ void MPU_Config(void)
   MPU_InitStruct.Size = MPU_REGION_SIZE_8MB;
   MPU_InitStruct.AccessPermission = MPU_REGION_FULL_ACCESS;
   MPU_InitStruct.IsBufferable = MPU_ACCESS_NOT_BUFFERABLE;
-  MPU_InitStruct.IsCacheable = MPU_ACCESS_CACHEABLE;
-  MPU_InitStruct.IsShareable = MPU_ACCESS_NOT_SHAREABLE;
+  MPU_InitStruct.IsCacheable = MPU_ACCESS_NOT_CACHEABLE;
+  MPU_InitStruct.IsShareable = MPU_ACCESS_SHAREABLE;
   MPU_InitStruct.Number = MPU_REGION_NUMBER1;
   MPU_InitStruct.TypeExtField = MPU_TEX_LEVEL0;
   MPU_InitStruct.SubRegionDisable = 0x0;

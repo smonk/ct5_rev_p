@@ -10,6 +10,7 @@
 #include "../hope_hal/hope_version.h"
 
 #include "ct5_fx_state_machine.h"
+#include "ct5_fx_ctl_input.h"
 
 // ███╗   ███╗██████╗ ██████╗ 
 // ████╗ ████║╚════██╗██╔══██╗
@@ -38,6 +39,8 @@ static ct5_buffer_t ct5_buffer_b;
 static ct5_buffer_t ct5_buffer_c;
 static ct5_buffer_t ct5_buffer_d;
 
+static m2r_variables_t m2r_variables_a;
+static m2r_variables_t *my_m2r_variables;
 
 // struct state_function_ponter;
 
@@ -136,6 +139,7 @@ void ct5_fx_m2r_init()
 
 	main_sfp.next_state = m2r_state_reset;
 
+	my_m2r_variables = &m2r_variables_a;
 }
 
 
@@ -160,12 +164,15 @@ void ct5_fx_m2r( hope_dsp_buffer_struct * input, hope_dsp_buffer_struct * output
 	//zero the output buffer,start
 	m2r_helper_zero_buffer( output );
 	
+	//update the ctl_inputs.
+	ct5_fx_get_m2r_variables( my_m2r_variables );
+
 	//run algorithm
 	main_sfp = main_sfp.next_state( input , output );
 
 	float wet_gain, dry_gain;
-	wet_gain = 0.0;
-	dry_gain = 0.0;
+	wet_gain = my_m2r_variables->wet_gain;
+	dry_gain = my_m2r_variables->dry_gain;
 
 	//do the clean mix here?
 	m2r_helper_wet_dry_mix( input, dry_gain, output, wet_gain, output );
