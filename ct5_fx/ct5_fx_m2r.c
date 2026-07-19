@@ -40,7 +40,11 @@ static ct5_buffer_t ct5_buffer_c;
 static ct5_buffer_t ct5_buffer_d;
 
 static m2r_variables_t m2r_variables_a;
-static m2r_variables_t *my_m2r_variables;
+static m2r_variables_t m2r_variables_b;
+static m2r_variables_t m2r_variables_c;
+static m2r_variables_t m2r_variables_d;
+
+static m2r_variables_t * m2r_global_variables;
 
 // struct state_function_ponter;
 
@@ -80,6 +84,7 @@ void m2r_helper_block_length_fade_out( hope_dsp_buffer_struct * output );
 float m2r_helper_distance_to_start( ct5_buffer_t * buf );
 float m2r_helper_distance_to_end( ct5_buffer_t * buf );
 float m2r_helper_distance_to_gain_coefficient( float distance ); 
+void m2r_helper_new_playback_markers( ct5_buffer_t * buf );
 
 uint32_t m2r_n_playing = 0;
 
@@ -100,6 +105,11 @@ void ct5_fx_m2r_init()
 	bufs[1] = &ct5_buffer_b;
 	bufs[2] = &ct5_buffer_c;
 	bufs[3] = &ct5_buffer_d;
+
+	bufs[0]->m2r_variables = &m2r_variables_a;
+	bufs[1]->m2r_variables = &m2r_variables_b;
+	bufs[2]->m2r_variables = &m2r_variables_c;
+	bufs[3]->m2r_variables = &m2r_variables_d;
 
 	uint32_t channel_buffer_size = CT5_BUFFER_MEM_SIZE_WORDS / 8;
 
@@ -139,7 +149,7 @@ void ct5_fx_m2r_init()
 
 	main_sfp.next_state = m2r_state_reset;
 
-	my_m2r_variables = &m2r_variables_a;
+	// my_m2r_variables = &m2r_variables_a;
 }
 
 
@@ -163,16 +173,19 @@ void ct5_fx_m2r( hope_dsp_buffer_struct * input, hope_dsp_buffer_struct * output
 	}
 	//zero the output buffer,start
 	m2r_helper_zero_buffer( output );
-	
+
+	//
+	ct5_fx_get_m2r_variables( m2r_global_variables );
+
 	//update the ctl_inputs.
-	ct5_fx_get_m2r_variables( my_m2r_variables );
+	ct5_fx_get_m2r_variables( bufs[1]->m2r_variables );
 
 	//run algorithm
 	main_sfp = main_sfp.next_state( input , output );
 
 	float wet_gain, dry_gain;
-	wet_gain = my_m2r_variables->wet_gain;
-	dry_gain = my_m2r_variables->dry_gain;
+	wet_gain = m2r_global_variables->wet_gain;
+	dry_gain = m2r_global_variables->dry_gain;
 
 	//do the clean mix here?
 	m2r_helper_wet_dry_mix( input, dry_gain, output, wet_gain, output );
@@ -283,6 +296,7 @@ state_function_pointer_t m2r_state_rec_overdub_n_max( hope_dsp_buffer_struct * i
 	temp_read_head_data.left_channel_buffer = trhd_left;
 	temp_read_head_data.right_channel_buffer = trhd_right;
 
+
 	//now stack the read data
 	for( uint32_t i = 1; i <= m2r_n_playing; i++)
 	{
@@ -351,12 +365,21 @@ state_function_pointer_t m2r_state_record_to_playback( hope_dsp_buffer_struct * 
 	//and fade in the read buffer that is about to be added? 
 	//the fade in shoudl be handled already actually 
 
-	//the fade out should be done to bufs[m2r_n_playing] buffer
-	bufs[0]->playback_start = ( ( bufs[0]->recording_start ) / 4 ) * 3;
-	bufs[0]->playback_end = ( ( bufs[0]->recording_end ) / 4 ) ;
 	bufs[0]->recording_length = bufs[0]->recording_end - bufs[0]->recording_start;
-	bufs[0]->playback_length = bufs[0]->playback_end - bufs[0]->playback_start;
+	
+	m2r_helper_new_playback_markers( bufs[0] );
+	if( m2r_global_variables->desired_dir > 0)
+	{
+		bufs[0]->float_read_head_address = bufs[0]->recording_start;
+	}
+	else
+	{
+		bufs[0]->float_read_head_address = bufs[0]->recording_end;
+	}
+	bufs[0]->desired_dir = m2r_global_variables->desired_dir;
 
+	//the fade out should be done to bufs[m2r_n_playing] buffer
+	
 	//we need a randomized start based on the info in the buffer, so make a helper that takes a buffer and returns an integer start address
 
 	//now stack the read data
@@ -574,6 +597,7 @@ uint32_t m2r_event_record_button_was_held( )
 void m2r_helper_playback_block( ct5_buffer_t * buf,  hope_dsp_buffer_struct * output )
 {
 	// buf->desired_dir = 1.1;
+	buf->desired_dir = buf->m2r_variables->desired_dir;
 	float read_head_address_vector[ HOPE_DSP_BUFFER_SIZE ];
 	float read_head_volume_vector[ HOPE_DSP_BUFFER_SIZE ];
 	
@@ -597,16 +621,17 @@ void m2r_helper_playback_block( ct5_buffer_t * buf,  hope_dsp_buffer_struct * ou
 		
 		buf->float_read_head_address += buf->current_dir;
 
-		//this math assumes playback_start is 0, which may not be true in general.
+		//if either of this condtitions are true, then we need to reroll the start and end address.
+		//this section assumes playback_end > playback_start. Unfortunately this
+		//is not always true. So we need to make a better  function that handles things properly.
 		if( buf->float_read_head_address > buf->playback_end )
 		{
-			// buf->float_read_head_address = buf->float_read_head_address - buf->playback_length;
+			m2r_helper_new_playback_markers ( buf );
 			buf->float_read_head_address = buf->playback_start;
 		}
-
-		if( buf->float_read_head_address < buf->playback_start )
+		else if( buf->float_read_head_address < buf->playback_start )
 		{
-			// buf->float_read_head_address = buf->float_read_head_address + buf->playback_length;
+			m2r_helper_new_playback_markers( buf );
 			buf->float_read_head_address = buf->playback_end;
 		}
 
@@ -658,6 +683,28 @@ void m2r_helper_playback_block( ct5_buffer_t * buf,  hope_dsp_buffer_struct * ou
 
 }
 
+void m2r_helper_new_playback_markers( ct5_buffer_t * buf )
+{
+	//we need a uniform random variable between 0 and 1
+	float uniform_random_variable = (float)rand() / (float)RAND_MAX;
+	//assumes recording_start = 0, which i t should be in this algorithm
+	buf->playback_start = uniform_random_variable * buf->recording_end * buf->m2r_variables->playback_start_randomization;
+	buf->playback_length = buf->recording_end * buf->m2r_variables->playback_slice_length;
+	if( buf->playback_length < (10* HOPE_DSP_BUFFER_SIZE))
+	{
+		buf->playback_length = (10* HOPE_DSP_BUFFER_SIZE);
+	}		
+	buf->playback_end = buf->playback_start + buf->playback_length;
+	if( buf->playback_end > buf->recording_end )
+	{
+		buf->playback_end -= buf->recording_end;
+		if(buf->playback_end < 0)
+		{
+			while(1);
+		}
+	}
+
+}
 float m2r_helper_distance_to_start( ct5_buffer_t * buf )
 {
 	//first case is simple, we know start is less than end.

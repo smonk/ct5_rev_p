@@ -147,7 +147,23 @@ float get_q_table_value( int32_t q_counter, float pot_value )
     switch ( q_counter )
     {
         case 0:
-
+            temp = 2*(pot_value - 0.5);
+            if(temp > 0.5)
+            {
+                temp = 2*temp;
+            }
+            else if (temp > 0)
+            {
+                temp = temp + 0.5;
+            }
+            else if( temp > -0.5)
+            {
+                temp = temp - 0.5;
+            }
+            else
+            {
+                temp = 2*temp;
+            }
             break;
         case 1:
             temp = q_table_chromatic[(uint32_t)(pot_value * 49.9999)];
@@ -169,5 +185,6 @@ float get_q_table_value( int32_t q_counter, float pot_value )
             break;
     }
 
+    return temp;
 }
 

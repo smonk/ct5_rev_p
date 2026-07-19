@@ -7,6 +7,9 @@
 #define CT5_BUFFER_MEM_SIZE_WORDS ( CT5_BUFFER_MEM_SIZE_BYTES / 4 )
 //octospi1 base address
 #define CT5_BUFFER_MEM_BASE_ADDRESS ( 0x90000000 )
+//the valid address range should be
+//0x90000000 to 0x907fffff
+#include "ct5_fx_m2r.h"
 
 typedef struct {
 	
@@ -59,7 +62,8 @@ typedef struct {
 	uint32_t recording_length;
 	uint32_t recording_wrapped;
 
-
+	//a pointer to a m2r vars type?
+	m2r_variables_t * m2r_variables;
 } ct5_buffer_t;
 
 #endif

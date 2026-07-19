@@ -76,7 +76,7 @@ uint32_t interpret_n_switch( )
 
 float interpret_mix_pot_dry_gain( )
 {
-	float temp = my_pot_and_cvin[ 0 ].normalized_value;
+	float temp = my_pot_and_cvin[ 3 ].normalized_value;
 
 	//make sure temp is between 0 and 1
 	if( temp < 0.0 )
@@ -101,7 +101,7 @@ float interpret_mix_pot_dry_gain( )
 
 float interpret_mix_pot_wet_gain( )
 {
-	float temp = my_pot_and_cvin[ 0 ].normalized_value;
+	float temp = my_pot_and_cvin[ 3 ].normalized_value;
 
 	//make sure temp is between 0 and 1
 	if( temp < 0.0 )
@@ -126,11 +126,12 @@ float interpret_mix_pot_wet_gain( )
 
 float interpret_desired_dir( )
 {
-	float temp = my_pot_and_cvin[ 1 ].normalized_value;
+	float temp = my_pot_and_cvin[ 2 ].normalized_value;
 
 	//read the q switch for was tapped
 	if( my_btn_and_sw[ 2 ].tap_event_flag )
 	{
+		my_btn_and_sw[ 2 ].tap_event_flag = 0;
 		q_counter--;
 		if( q_counter < 0 )
 		{
@@ -140,6 +141,7 @@ float interpret_desired_dir( )
 
 	if( my_btn_and_sw[ 3 ].tap_event_flag )
 	{
+		my_btn_and_sw[ 3 ].tap_event_flag = 0;
 		q_counter++;
 		if( q_counter > CT5_FX_Q_COUNTER_MAX )
 		{
@@ -153,10 +155,10 @@ float interpret_desired_dir( )
 
 float interpret_slice_length( )
 {
-	return my_pot_and_cvin[ 2 ].normalized_value;
+	return my_pot_and_cvin[ 1 ].normalized_value;
 }
 
 float interpret_start_randomization( )
 {
-	return my_pot_and_cvin[ 3 ].normalized_value;	
+	return my_pot_and_cvin[ 0 ].normalized_value;	
 }

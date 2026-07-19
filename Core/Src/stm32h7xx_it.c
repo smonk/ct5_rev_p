@@ -98,8 +98,14 @@ void HardFault_Handler(void)
   */
 void MemManage_Handler(void)
 {
-  /* USER CODE BEGIN MemoryManagement_IRQn 0 */
-
+      /* USER CODE BEGIN MemoryManagement_IRQn 0 */
+    uint8_t mmfsr = (SCB->CFSR >> 0) & 0xFF; // Extracts the MMFSR byte
+    uint8_t mmar_valid = (mmfsr & 0x80) >> 7; // Checks MMARVALID flag
+uint32_t faulty_address = 0;
+    if (mmar_valid) {
+      faulty_address = SCB->MMFAR;
+        // faulty_address contains the memory location that triggered the fault
+    }
   /* USER CODE END MemoryManagement_IRQn 0 */
   while (1)
   {
