@@ -44,6 +44,8 @@ static m2r_variables_t m2r_variables_b;
 static m2r_variables_t m2r_variables_c;
 static m2r_variables_t m2r_variables_d;
 
+static m2r_variables_t m2r_variables_global;
+
 static m2r_variables_t * m2r_global_variables;
 
 // struct state_function_ponter;
@@ -65,10 +67,13 @@ state_function_pointer_t m2r_state_record_to_playback( hope_dsp_buffer_struct * 
 state_function_pointer_t m2r_state_play_n_max( hope_dsp_buffer_struct * input, hope_dsp_buffer_struct * output );
 state_function_pointer_t m2r_state_playback_to_record( hope_dsp_buffer_struct * input, hope_dsp_buffer_struct * output );
 state_function_pointer_t m2r_state_record_to_reset( hope_dsp_buffer_struct * input, hope_dsp_buffer_struct * output );
+state_function_pointer_t m2r_state_n_change_while_playing( hope_dsp_buffer_struct * input, hope_dsp_buffer_struct * output );
+state_function_pointer_t m2r_state_n_change_while_recording( hope_dsp_buffer_struct * input, hope_dsp_buffer_struct * output );
 
 uint32_t m2r_event_record_button_pressed( void );
 uint32_t m2r_event_record_button_was_tapped( void );
 uint32_t m2r_event_record_button_was_held( void );
+uint32_t m2r_event_n_switch_changed( void );
 
 void m2r_helper_playback_block( ct5_buffer_t * buf,  hope_dsp_buffer_struct * output );
 void m2r_helper_record_block( ct5_buffer_t * buf, hope_dsp_buffer_struct * input);
@@ -87,6 +92,9 @@ float m2r_helper_distance_to_gain_coefficient( float distance );
 void m2r_helper_new_playback_markers( ct5_buffer_t * buf );
 
 uint32_t m2r_n_playing = 0;
+uint32_t m2r_n_overdubs = 0;
+
+uint32_t last_m2r_n_playing = 0;
 
 state_function_pointer_t main_sfp;
 
@@ -113,6 +121,8 @@ void ct5_fx_m2r_init()
 	bufs[1]->m2r_variables = &m2r_variables_b;
 	bufs[2]->m2r_variables = &m2r_variables_c;
 	bufs[3]->m2r_variables = &m2r_variables_d;
+
+	m2r_global_variables = &m2r_variables_global;
 
 	uint32_t channel_buffer_size = CT5_BUFFER_MEM_SIZE_WORDS / 8;
 
@@ -229,7 +239,8 @@ state_function_pointer_t m2r_state_reset( hope_dsp_buffer_struct * input, hope_d
 
 	}
 
-	m2r_n_playing = 0;
+	// m2r_n_playing = 0;
+	m2r_n_overdubs = 0;
 
 
 	//now check the events
@@ -243,6 +254,13 @@ state_function_pointer_t m2r_state_reset( hope_dsp_buffer_struct * input, hope_d
 		//first we need a struct to put the pointer in
 		sfp.next_state = m2r_state_reset_to_record;
 		return sfp;
+	}
+	else if( m2r_event_n_switch_changed() )
+	{
+		m2r_n_playing = m2r_global_variables->m2r_n_switch;
+		sfp.next_state = m2r_state_reset;
+		return sfp;
+
 	}
 	else
 	{
@@ -299,9 +317,18 @@ state_function_pointer_t m2r_state_rec_overdub_n_max( hope_dsp_buffer_struct * i
 	temp_read_head_data.left_channel_buffer = trhd_left;
 	temp_read_head_data.right_channel_buffer = trhd_right;
 
+	uint32_t temp_n;
+	if( m2r_n_overdubs < m2r_n_playing )
+	{
+		temp_n = m2r_n_overdubs;
+	}
+	else
+	{
+		temp_n = m2r_n_playing;
+	}
 
 	//now stack the read data
-	for( uint32_t i = 1; i <= m2r_n_playing; i++)
+	for( uint32_t i = 1; i <= temp_n; i++)
 	{
 		m2r_helper_playback_block( bufs[i], &temp_read_head_data );
 		m2r_helper_sum_2_buffers( &temp_read_head_data, output, output );
@@ -329,6 +356,11 @@ state_function_pointer_t m2r_state_rec_overdub_n_max( hope_dsp_buffer_struct * i
 		//go to mtr_state_play_1_max
 		//first we need a struct to put the pointer in
 		sfp.next_state = m2r_state_record_to_playback;
+		return sfp;
+	}
+	else if( m2r_event_n_switch_changed() )
+	{
+		sfp.next_state = m2r_state_n_change_while_recording;
 		return sfp;
 	}
 	else
@@ -388,13 +420,24 @@ state_function_pointer_t m2r_state_record_to_playback( hope_dsp_buffer_struct * 
 	
 	//we need a randomized start based on the info in the buffer, so make a helper that takes a buffer and returns an integer start address
 
+
+	uint32_t temp_n;
+	if( m2r_n_overdubs < m2r_n_playing )
+	{
+		temp_n = m2r_n_overdubs;
+	}
+	else
+	{
+		temp_n = m2r_n_playing;
+	}
+
 	//now stack the read data
-	for( uint32_t i = 1; i < m2r_n_playing; i++)
+	for( uint32_t i = 1; i < temp_n; i++)
 	{
 		m2r_helper_playback_block( bufs[i], &temp );
 		m2r_helper_sum_2_buffers( &temp, output, output );
 	}
-	if( m2r_n_playing == m2r_n_to_fade_on_increment )	 
+	if( temp_n == m2r_n_to_fade_on_increment )	 
 	{
 		m2r_helper_playback_block( bufs[m2r_n_to_fade_on_increment], &temp );
 		m2r_helper_block_length_fade_out( &temp );
@@ -415,6 +458,7 @@ state_function_pointer_t m2r_state_record_to_playback( hope_dsp_buffer_struct * 
 	//if its a tap set the next state to reset
 
 	m2r_helper_increment_n_playing( bufs, &m2r_n_playing );
+	m2r_n_overdubs++;
 
 	state_function_pointer_t sfp;
 
@@ -441,9 +485,18 @@ state_function_pointer_t m2r_state_play_n_max( hope_dsp_buffer_struct * input, h
 	
 	//zero the output buffer
 	m2r_helper_zero_buffer( output );
-	
+
+	uint32_t temp_n;
+	if( m2r_n_overdubs < m2r_n_playing )
+	{
+		temp_n = m2r_n_overdubs;
+	}
+	else
+	{
+		temp_n = m2r_n_playing;
+	}
 	//now stack the read data
-	for( uint32_t i = 1; i <= m2r_n_playing; i++)
+	for( uint32_t i = 1; i <= temp_n; i++)
 	{
 		m2r_helper_playback_block( bufs[i], &temp_read_head_data );
 		m2r_helper_sum_2_buffers( &temp_read_head_data, output, output );
@@ -455,6 +508,11 @@ state_function_pointer_t m2r_state_play_n_max( hope_dsp_buffer_struct * input, h
 	{
 
 		sfp.next_state = m2r_state_playback_to_record;
+		return sfp;
+	}
+	else if( m2r_event_n_switch_changed() )
+	{
+		sfp.next_state = m2r_state_n_change_while_playing;
 		return sfp;
 	}
 	else
@@ -485,8 +543,18 @@ state_function_pointer_t m2r_state_playback_to_record( hope_dsp_buffer_struct * 
 
 	m2r_helper_zero_buffer( &temp );
 
+	uint32_t temp_n;
+	if( m2r_n_overdubs < m2r_n_playing )
+	{
+		temp_n = m2r_n_overdubs;
+	}
+	else
+	{
+		temp_n = m2r_n_playing;
+	}
+
 	//now stack the read data
-	for( uint32_t i = 1; i <= m2r_n_playing; i++)
+	for( uint32_t i = 1; i <= temp_n; i++)
 	{
 		m2r_helper_playback_block( bufs[i], &temp );
 		m2r_helper_sum_2_buffers( &temp, output, output );
@@ -520,8 +588,19 @@ state_function_pointer_t m2r_state_record_to_reset( hope_dsp_buffer_struct * inp
 	temp_read_head_data.left_channel_buffer = trhd_left;
 	temp_read_head_data.right_channel_buffer = trhd_right;
 
+	uint32_t temp_n;
+	if( m2r_n_overdubs < m2r_n_playing )
+	{
+		temp_n = m2r_n_overdubs;
+	}
+	else
+	{
+		temp_n = m2r_n_playing;
+	}
+
+
 	//now stack the read data
-	for( uint32_t i = 1; i <= m2r_n_playing; i++)
+	for( uint32_t i = 1; i <= temp_n; i++)
 	{
 		m2r_helper_playback_block( bufs[i], &temp_read_head_data );
 		m2r_helper_sum_2_buffers( &temp_read_head_data, output, output );
@@ -541,6 +620,132 @@ state_function_pointer_t m2r_state_record_to_reset( hope_dsp_buffer_struct * inp
 	state_function_pointer_t sfp;
 	sfp.next_state = m2r_state_reset;
 	return sfp;
+
+}
+
+state_function_pointer_t m2r_state_n_change_while_recording( hope_dsp_buffer_struct * input, hope_dsp_buffer_struct * output )
+{
+	//first do the thing
+	//record into bufs[0]
+	m2r_helper_record_block( bufs[0], input );
+
+	//we need a temp buffer to hold the output of playback
+	hope_dsp_buffer_struct temp_read_head_data;
+	float trhd_left[HOPE_DSP_BUFFER_SIZE];
+	float trhd_right[HOPE_DSP_BUFFER_SIZE];
+	temp_read_head_data.left_channel_buffer = trhd_left;
+	temp_read_head_data.right_channel_buffer = trhd_right;
+
+	uint32_t n_switch = m2r_global_variables->m2r_n_switch;
+	//this means we have to fade in the high n
+	if( n_switch > m2r_n_playing )
+	{
+		//now stack the read data
+		for( uint32_t i = 1; i <= m2r_n_playing; i++)
+		{
+			m2r_helper_playback_block( bufs[i], &temp_read_head_data );
+			m2r_helper_sum_2_buffers( &temp_read_head_data, output, output );
+		}
+		//now fade in the additional 
+		for( uint32_t i = m2r_n_playing + 1; i <= n_switch; i++)
+		{
+			m2r_helper_playback_block( bufs[i], &temp_read_head_data );
+			m2r_helper_block_length_fade_in( &temp_read_head_data );
+			m2r_helper_sum_2_buffers( &temp_read_head_data, output, output );
+		}
+	}
+	else if( n_switch < m2r_n_playing )
+	{
+		//fade out the high ns
+		for( uint32_t i = n_switch + 1; i <= m2r_n_playing; i++)
+		{
+			m2r_helper_playback_block( bufs[i], &temp_read_head_data );
+			m2r_helper_block_length_fade_out( &temp_read_head_data );
+			m2r_helper_sum_2_buffers( &temp_read_head_data, output, output );
+		}
+		//now stack the still on ones.
+		for( uint32_t i = 1; i <= n_switch; i++)
+		{
+			m2r_helper_playback_block( bufs[i], &temp_read_head_data );
+			m2r_helper_sum_2_buffers( &temp_read_head_data, output, output );			
+		}
+	}
+
+	m2r_n_playing = n_switch;
+
+	//led is red
+	hope_ct5_led_on_setting = hope_ct5_pwm_rgb_set_solid_red;
+
+	//in this state you can start recording to the buffer once an appropriate sample is found.
+
+	//when the button gets released it is either a tap or a hold.
+	//if its a tap set the next state to reset
+	
+	state_function_pointer_t sfp;
+	sfp.next_state = m2r_state_rec_overdub_n_max;
+	return sfp;
+}
+
+state_function_pointer_t m2r_state_n_change_while_playing( hope_dsp_buffer_struct * input, hope_dsp_buffer_struct * output )
+{
+	//do the thing
+
+	//led is blue?
+	hope_ct5_led_on_setting = hope_ct5_pwm_rgb_set_solid_blue;
+
+	//we need to playback m2r_n_playing buffers
+	//we need a temp buffer to hold teh output of playback
+	hope_dsp_buffer_struct temp_read_head_data;
+	float trhd_left[HOPE_DSP_BUFFER_SIZE];
+	float trhd_right[HOPE_DSP_BUFFER_SIZE];
+	temp_read_head_data.left_channel_buffer = trhd_left;
+	temp_read_head_data.right_channel_buffer = trhd_right;
+	
+	//zero the output buffer
+	m2r_helper_zero_buffer( output );
+
+	uint32_t n_switch = m2r_global_variables->m2r_n_switch;
+	//this means we have to fade in the high n
+	if( n_switch > m2r_n_playing )
+	{
+		//now stack the read data
+		for( uint32_t i = 1; i <= m2r_n_playing; i++)
+		{
+			m2r_helper_playback_block( bufs[i], &temp_read_head_data );
+			m2r_helper_sum_2_buffers( &temp_read_head_data, output, output );
+		}
+		//now fade in the additional 
+		for( uint32_t i = m2r_n_playing + 1; i <= n_switch; i++)
+		{
+			m2r_helper_playback_block( bufs[i], &temp_read_head_data );
+			m2r_helper_block_length_fade_in( &temp_read_head_data );
+			m2r_helper_sum_2_buffers( &temp_read_head_data, output, output );
+		}
+	}
+	else if( n_switch < m2r_n_playing )
+	{
+		//fade out the high ns
+		for( uint32_t i = n_switch + 1; i <= m2r_n_playing; i++)
+		{
+			m2r_helper_playback_block( bufs[i], &temp_read_head_data );
+			m2r_helper_block_length_fade_out( &temp_read_head_data );
+			m2r_helper_sum_2_buffers( &temp_read_head_data, output, output );
+		}
+		//now stack the still on ones.
+		for( uint32_t i = 1; i <= n_switch; i++)
+		{
+			m2r_helper_playback_block( bufs[i], &temp_read_head_data );
+			m2r_helper_sum_2_buffers( &temp_read_head_data, output, output );			
+		}
+	}
+
+	m2r_n_playing = n_switch;
+
+	//in this state we are just playing back, no recording.
+	state_function_pointer_t sfp;
+	sfp.next_state = m2r_state_play_n_max;
+	return sfp;
+
 
 }
 
@@ -587,6 +792,20 @@ uint32_t m2r_event_record_button_was_held( )
 	}
 
 	return 0;
+}
+
+uint32_t m2r_event_n_switch_changed( )
+{
+
+	if( m2r_global_variables->m2r_n_switch != m2r_n_playing )
+	{
+		return 1;
+	}
+	else
+	{
+		return 0;
+	}
+	
 }
 
 
