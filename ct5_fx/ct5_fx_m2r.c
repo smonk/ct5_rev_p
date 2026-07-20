@@ -90,6 +90,9 @@ uint32_t m2r_n_playing = 0;
 
 state_function_pointer_t main_sfp;
 
+float * debug_address_pointer;
+uint32_t debug_index = 0;
+
 // ██╗███╗   ██╗██╗████████╗
 // ██║████╗  ██║██║╚══██╔══╝
 // ██║██╔██╗ ██║██║   ██║   
@@ -353,6 +356,9 @@ state_function_pointer_t m2r_state_record_to_playback( hope_dsp_buffer_struct * 
 
 	m2r_helper_block_length_fade_out( &temp );
 
+	//you need the vars
+	ct5_fx_get_m2r_variables( bufs[0]->m2r_variables );
+
 	//record into bufs[0]
 	m2r_helper_record_block( bufs[0], &temp );
 
@@ -601,8 +607,13 @@ void m2r_helper_playback_block( ct5_buffer_t * buf,  hope_dsp_buffer_struct * ou
 	float read_head_address_vector[ HOPE_DSP_BUFFER_SIZE ];
 	float read_head_volume_vector[ HOPE_DSP_BUFFER_SIZE ];
 	
+	debug_address_pointer = read_head_address_vector;
+	float alpha, beta;
+	uint32_t low_address, high_address;
+	
 	for(uint32_t i = 0; i < HOPE_DSP_BUFFER_SIZE; i++)
 	{
+		debug_index = i;
 		if( fabs(buf->desired_dir - buf->current_dir) > buf->dir_increment )
 		{
 			if(buf->desired_dir - buf->current_dir > 0)
@@ -624,17 +635,47 @@ void m2r_helper_playback_block( ct5_buffer_t * buf,  hope_dsp_buffer_struct * ou
 		//if either of this condtitions are true, then we need to reroll the start and end address.
 		//this section assumes playback_end > playback_start. Unfortunately this
 		//is not always true. So we need to make a better  function that handles things properly.
-		if( buf->float_read_head_address > buf->playback_end )
+		
+		// in this situation where end is greater than sart, we dont have to worry about wrappying on the record space, because we cant get there.
+		if( buf->playback_end > buf->playback_start)
 		{
-			m2r_helper_new_playback_markers ( buf );
-			buf->float_read_head_address = buf->playback_start;
+			if( buf->float_read_head_address > buf->playback_end )
+			{
+				m2r_helper_new_playback_markers ( buf );
+				buf->float_read_head_address = buf->playback_start;
+			}
+			else if( buf->float_read_head_address < buf->playback_start )
+			{
+				m2r_helper_new_playback_markers( buf );
+				buf->float_read_head_address = buf->playback_end;
+			}
 		}
-		else if( buf->float_read_head_address < buf->playback_start )
+		// however here we have to wrap around the record space becuase we can be there.
+		else
 		{
-			m2r_helper_new_playback_markers( buf );
-			buf->float_read_head_address = buf->playback_end;
-		}
+			if( buf->float_read_head_address > buf->recording_end )
+			{
+				buf->float_read_head_address -= buf->recording_length; //should be length? but length equale end 
+			}
+			else if( buf->float_read_head_address < buf->recording_start )
+			{
+				buf->float_read_head_address += buf->recording_length;
+			}
 
+			if( ( buf->float_read_head_address < buf->playback_start ) && ( buf->float_read_head_address > buf->playback_end ) )
+			{
+				//this means we are out of bounds.
+				m2r_helper_new_playback_markers( buf );
+				if(buf->current_dir > 0)
+				{
+					buf->float_read_head_address = buf->playback_start;
+				}
+				else
+				{
+					buf->float_read_head_address = buf->playback_end;
+				}
+			}
+		}
 		read_head_address_vector[i] = buf->float_read_head_address;
 		float ds = m2r_helper_distance_to_start( buf );
 		float ds_gain = m2r_helper_distance_to_gain_coefficient( ds );
@@ -642,28 +683,19 @@ void m2r_helper_playback_block( ct5_buffer_t * buf,  hope_dsp_buffer_struct * ou
 		float de = m2r_helper_distance_to_end( buf );
 		float de_gain = m2r_helper_distance_to_gain_coefficient( de );
 		read_head_volume_vector[i] = ds_gain * de_gain; 
-	}
 
-	// //now determine the volume vector as well
-	// for(uint32_t i = 0; i < HOPE_DSP_BUFFER_SIZE; i++)
-	// {
-	// 	read_head_volume_vector[i] = 1.0;
-	// }
-
-	//now we can make the output
-	// float read_head_data_left[ HOPE_DSP_BUFFER_SIZE ];
-	// float read_head_data_right[ HOPE_DSP_BUFFER_SIZE ];
-
-	float alpha, beta;
-	uint32_t low_address, high_address;
-	for(uint32_t i = 0; i < HOPE_DSP_BUFFER_SIZE; i++)
-	{
 		low_address = (uint32_t)read_head_address_vector[i];
 		high_address = (uint32_t)read_head_address_vector[i] + 1;
-		if( high_address > buf->playback_end )
+		if( high_address > buf->recording_end )
 		{
-			high_address = high_address - buf->playback_length;
+			high_address = 0;
 		}
+
+
+		// if( high_address > buf->playback_end )
+		// {
+		// 	high_address = high_address - buf->playback_length;
+		// }
 
 		alpha = read_head_address_vector[i] - low_address;
 		beta = 1.0 - alpha;
@@ -679,7 +711,44 @@ void m2r_helper_playback_block( ct5_buffer_t * buf,  hope_dsp_buffer_struct * ou
 
 		output->right_channel_buffer[i] *= read_head_volume_vector[i];
 
+
 	}
+
+	// //now determine the volume vector as well
+	// for(uint32_t i = 0; i < HOPE_DSP_BUFFER_SIZE; i++)
+	// {
+	// 	read_head_volume_vector[i] = 1.0;
+	// }
+
+	//now we can make the output
+	// float read_head_data_left[ HOPE_DSP_BUFFER_SIZE ];
+	// float read_head_data_right[ HOPE_DSP_BUFFER_SIZE ];
+
+
+	// for(uint32_t i = 0; i < HOPE_DSP_BUFFER_SIZE; i++)
+	// {
+	// 	low_address = (uint32_t)read_head_address_vector[i];
+	// 	high_address = (uint32_t)read_head_address_vector[i] + 1;
+	// 	if( high_address > buf->playback_end )
+	// 	{
+	// 		high_address = high_address - buf->playback_length;
+	// 	}
+
+	// 	alpha = read_head_address_vector[i] - low_address;
+	// 	beta = 1.0 - alpha;
+	// 	output->left_channel_buffer[i] = 
+	// 			beta * (*(low_address + buf->left_channel_physical_memory_start_address)) 
+	// 		+ 	alpha * (*((high_address + buf->left_channel_physical_memory_start_address))) ;
+	
+	// 	output->left_channel_buffer[i] *= read_head_volume_vector[i];
+
+	// 	output->right_channel_buffer[i] = 
+	// 			beta * (*(low_address + buf->right_channel_physical_memory_start_address))
+	// 		+ 	alpha * (*((high_address + buf->right_channel_physical_memory_start_address))) ;
+
+	// 	output->right_channel_buffer[i] *= read_head_volume_vector[i];
+
+	// }
 
 }
 
@@ -694,7 +763,7 @@ void m2r_helper_new_playback_markers( ct5_buffer_t * buf )
 	{
 		buf->playback_length = (10* HOPE_DSP_BUFFER_SIZE);
 	}		
-	buf->playback_end = buf->playback_start + buf->playback_length;
+	buf->playback_end = buf->playback_start + buf->playback_length -1; 
 	if( buf->playback_end > buf->recording_end )
 	{
 		buf->playback_end -= buf->recording_end;
@@ -734,13 +803,13 @@ float m2r_helper_distance_to_end( ct5_buffer_t * buf )
 	}
 	else
 	{
-		if( buf->float_read_head_address < buf->playback_end )
+		if( buf->float_read_head_address <= buf->playback_end )
 		{
-			return buf->recording_end - buf->float_read_head_address;
+			return buf->playback_end - buf->float_read_head_address;
 		}
 		else
 		{
-			return buf->float_read_head_address + buf->recording_end - buf->playback_start;
+			return buf->playback_end + buf->recording_end - buf->float_read_head_address;
 		}
 	}
 }
