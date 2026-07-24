@@ -348,8 +348,8 @@ int main(void)
     //the dsp function
     // my_fx_pass_through( my_input_dsp_buffer, my_output_dsp_buffer );
     // ct5_fx_ct5( my_input_dsp_buffer, my_output_dsp_buffer );
-    ct5_fx_m2r( my_input_dsp_buffer, my_output_dsp_buffer );
-    // ct5_fx_m3t( my_input_dsp_buffer, my_output_dsp_buffer );
+    // ct5_fx_m2r( my_input_dsp_buffer, my_output_dsp_buffer );
+    ct5_fx_m3t( my_input_dsp_buffer, my_output_dsp_buffer );
 
     //start an adc conversion
     hope_pot_and_cvin_start_dma_conversion();
@@ -358,7 +358,7 @@ int main(void)
     hope_btn_and_sw_update( my_btn_and_sw );
 
     //midi rx and process
-    // hope_midi_read_all_pending_bytes( my_midi_rx_buffer );
+    hope_midi_read_all_pending_bytes( my_midi_rx_buffer );
 
     //for the terminal, this function handles periodic rx and tx    
     hope_port_uart_cli_test( cli, my_ls_rx_data_packet );

@@ -17,6 +17,9 @@ float interpret_desired_dir( void );
 float interpret_slice_length( void );
 float interpret_start_randomization( void );
 
+float interpret_playback_volume( void );
+float interpret_overdub_decay( void );
+
 
 #define CT5_FX_Q_COUNTER_MAX ( 5 )
 static int32_t q_counter = 0;
@@ -36,6 +39,18 @@ void ct5_fx_get_m2r_variables(m2r_variables_t *m2r_variables)
 	m2r_variables->playback_start_randomization = interpret_start_randomization();
 }
 
+void ct5_fx_get_m3t_variables(m3t_variables_t *m3t_variables)
+{
+	m3t_variables->m3t_n_switch = interpret_n_switch();
+
+	m3t_variables->wet_gain = interpret_mix_pot_wet_gain();	
+	m3t_variables->dry_gain = interpret_mix_pot_dry_gain();
+
+	m3t_variables->desired_dir = interpret_desired_dir();
+
+	m3t_variables->playback_volume = interpret_playback_volume();
+	m3t_variables->overdub_decay = interpret_overdub_decay();
+}
 
 // hope_btn_and_sw_struct_init(&l[0], GPIOB, 1 << 12, dbT, tht, "M_DOWN"); 
 // hope_btn_and_sw_struct_init(&l[1], GPIOB, 1 << 13, dbT, tht, "M_UP"); 
@@ -159,6 +174,24 @@ float interpret_slice_length( )
 }
 
 float interpret_start_randomization( )
+{
+	return my_pot_and_cvin[ 0 ].normalized_value;	
+}
+
+float interpret_playback_volume( )
+{
+	float temp = my_pot_and_cvin[ 1 ].normalized_value;
+	if( temp <= 0.5 )
+	{
+		temp = temp *0.2;
+	}
+	else 
+	{
+		temp = 0.1 + ( temp - 0.5 )*(1.8);
+	}
+}
+
+float interpret_overdub_decay( )
 {
 	return my_pot_and_cvin[ 0 ].normalized_value;	
 }

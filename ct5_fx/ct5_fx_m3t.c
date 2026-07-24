@@ -11,6 +11,7 @@
 #include "../hope_hal/hope_version.h"
 
 #include "ct5_fx_state_machine.h"
+#include "ct5_fx_ctl_input.h"
 
 // ███╗   ███╗██████╗ ████████╗
 // ████╗ ████║╚════██╗╚══██╔══╝
@@ -30,6 +31,13 @@ static ct5_buffer_t * bufs[M3T_N_BUFFERS];
 static ct5_buffer_t ct5_buffer_a;
 static ct5_buffer_t ct5_buffer_b;
 static ct5_buffer_t ct5_buffer_c;
+
+static m3t_variables_t m3t_variables_a;
+static m3t_variables_t m3t_variables_b;
+static m3t_variables_t m3t_variables_c;
+
+static m3t_variables_t m3t_variables_global;
+m3t_variables_t * my_m3t_variables;
 
 void ct5_fx_m3t_init( void );
 
@@ -61,6 +69,7 @@ void m3t_helper_copy_buffer( hope_dsp_buffer_struct * input, hope_dsp_buffer_str
 void m3t_helper_block_length_fade_in( hope_dsp_buffer_struct *output );
 void m3t_helper_block_length_fade_out( hope_dsp_buffer_struct * output );
 void m3t_helper_append_block( ct5_buffer_t * buf , hope_dsp_buffer_struct * input );
+void m3t_helper_add_two_dsp_buffers( hope_dsp_buffer_struct * input_1, hope_dsp_buffer_struct * input_2, hope_dsp_buffer_struct * output );
 
 state_function_pointer_t track_0_sfp = {0};
 state_function_pointer_t track_1_sfp = {0};
@@ -69,6 +78,7 @@ state_function_pointer_t track_2_sfp = {0};
 static uint32_t m3t_track_n_processing = 0;
 static uint32_t m3t_track_n_highlighted = 0;
 
+static uint32_t m3t_track_n_change_lock = 0;
 
 // ██╗███╗   ██╗██╗████████╗
 // ██║████╗  ██║██║╚══██╔══╝
@@ -82,6 +92,13 @@ void ct5_fx_m3t_init( )
 	bufs[0] = &ct5_buffer_a;
 	bufs[1] = &ct5_buffer_b;
 	bufs[2] = &ct5_buffer_c;
+
+	bufs[0]->m3t_variables = &m3t_variables_a;
+	bufs[1]->m3t_variables = &m3t_variables_b;
+	bufs[2]->m3t_variables = &m3t_variables_c;
+
+	my_m3t_variables = &m3t_variables_global;
+
 
 	uint32_t channel_buffer_size = CT5_BUFFER_MEM_SIZE_WORDS / 6;
 
@@ -118,6 +135,8 @@ void ct5_fx_m3t_init( )
 	track_1_sfp.next_state = m3t_state_reset;
 	track_2_sfp.next_state = m3t_state_reset;
 
+	m3t_track_n_change_lock = 0;
+
 }
 
 // ███╗   ███╗ █████╗ ██╗███╗   ██╗
@@ -142,21 +161,67 @@ void ct5_fx_m3t( hope_dsp_buffer_struct * input, hope_dsp_buffer_struct * output
 	{
 		input->right_channel_buffer[i] = input->left_channel_buffer[i];
 	}
+	
+
+	//this is a lock to block n switching when any track is recording.
+	ct5_fx_get_m3t_variables( my_m3t_variables );
+	m3t_track_n_change_lock = 0;
+	for(uint32_t i = 0; i < M3T_N_BUFFERS; i++)
+	{
+		if( bufs[i]->m3t_variables->is_recording )
+		{
+			m3t_track_n_change_lock = 1;
+		}
+	}
+	if( m3t_track_n_change_lock == 0 )
+	{
+		m3t_track_n_highlighted = my_m3t_variables->m3t_n_switch - 1;	
+	}
+
 	//zero the output buffer
 	m3t_helper_zero_buffer( output );
 
-	//now each sfp processed adds to the output buffer
+	hope_dsp_buffer_struct temp_buf;
+	temp_buf.num_samples_per_channel = HOPE_DSP_BUFFER_SIZE;
+	float temp_left_channel_buffer[HOPE_DSP_BUFFER_SIZE];
+	float temp_right_channel_buffer[HOPE_DSP_BUFFER_SIZE];
+	temp_buf.left_channel_buffer = temp_left_channel_buffer;
+	temp_buf.right_channel_buffer = temp_right_channel_buffer;
+
+
+	// now each sfp processed adds to the output buffer
+	m3t_helper_zero_buffer( &temp_buf );
 	m3t_track_n_processing = 0;
-	track_0_sfp = track_0_sfp.next_state( input, output );
-	// m3t_track_n_processing = 1;
-	// track_1_sfp = track_1_sfp.next_state( input, output );
-	// m3t_track_n_processing = 2;
-	// track_2_sfp = track_2_sfp.next_state( input, output );
+	if( m3t_track_n_highlighted == 0 )
+	{
+		ct5_fx_get_m3t_variables( bufs[0]->m3t_variables );
+	}
+	track_0_sfp = track_0_sfp.next_state( input, &temp_buf );
+	m3t_helper_add_two_dsp_buffers( output, &temp_buf, output );
+
+	m3t_helper_zero_buffer( &temp_buf );
+	m3t_track_n_processing = 1;
+	if( m3t_track_n_highlighted == 1 )
+	{
+		ct5_fx_get_m3t_variables( bufs[1]->m3t_variables );
+	}
+	track_1_sfp = track_1_sfp.next_state( input, &temp_buf );
+	m3t_helper_add_two_dsp_buffers( output, &temp_buf, output );
+	
+	m3t_helper_zero_buffer( &temp_buf );
+	m3t_track_n_processing = 2;
+	if( m3t_track_n_highlighted == 2 )
+	{
+		ct5_fx_get_m3t_variables( bufs[2]->m3t_variables );
+	}
+	track_2_sfp = track_2_sfp.next_state( input, &temp_buf );
+	m3t_helper_add_two_dsp_buffers( output, &temp_buf, output );
+	
 
 	//now at the end we need to mix the input and output accordingly.
 	float wet_gain, dry_gain;
-	wet_gain = 1.0;
-	dry_gain = 1.0;
+	wet_gain = my_m3t_variables->wet_gain;
+	dry_gain = my_m3t_variables->dry_gain;
 
 	m3t_helper_wet_dry_mix( input, dry_gain, output, wet_gain, output );
 
@@ -174,39 +239,46 @@ extern void (*hope_ct5_led_off_setting)( hope_pwm_rgb_led_struct * );
 
 state_function_pointer_t m3t_state_reset( hope_dsp_buffer_struct * input, hope_dsp_buffer_struct * output )
 {
-	//in this state we want to reset all the record and play heads
-	//we leave the state when a button pressed event occurs on the soft foot switch.
 
-	for( uint32_t i = 0; i < M3T_N_BUFFERS; i++)
-	{
-		bufs[i]->float_read_head_address = 0;
-		bufs[i]->integer_write_head_address = 0;
+	//only reset the buffer that the fsm controlls
+	bufs[m3t_track_n_processing]->float_read_head_address = 0;
+	bufs[m3t_track_n_processing]->integer_write_head_address = 0;
 
-		bufs[i]->playback_start = 0;
-		bufs[i]->playback_end = 0;
-		bufs[i]->recording_wrapped = 0;
+	bufs[m3t_track_n_processing]->playback_start = 0;
+	bufs[m3t_track_n_processing]->playback_end = 0;
+	bufs[m3t_track_n_processing]->recording_wrapped = 0;
 
-	}
 
 	//now check the events
 	//else we stay in this state
 
 	state_function_pointer_t sfp;
-	if( m3t_event_record_button_pressed() )
+
+	//if the buffer is the active buffer
+	//then interpret the event, otherwise stay in reset state
+	if( m3t_track_n_processing == m3t_track_n_highlighted )
 	{
-		//go to mtr_state_rec_overdub_1_max
-		//first we need a struct to put the pointer in
-		sfp.next_state = m3t_state_reset_to_record;
-		return sfp;
+		hope_ct5_led_on_setting = hope_ct5_pwm_rgb_set_blinking_green;
+		if( m3t_event_record_button_pressed() )
+		{
+			//go to mtr_state_rec_overdub_1_max
+			//first we need a struct to put the pointer in
+			sfp.next_state = m3t_state_reset_to_record;
+			return sfp;
+		}
+		else
+		{
+			//the clean sound is added in the parent function
+			//so there is nothing to do here.
+
+			//blink an led?
+
+			sfp.next_state = m3t_state_reset;
+			return sfp;
+		}		
 	}
 	else
 	{
-		//the clean sound is added in the parent function
-		//so there is nothing to do here.
-
-		//blink an led?
-		hope_ct5_led_on_setting = hope_ct5_pwm_rgb_set_blinking_green;
-
 		sfp.next_state = m3t_state_reset;
 		return sfp;
 	}
@@ -217,16 +289,6 @@ uint32_t reset_to_record_miss = 0;
 state_function_pointer_t m3t_state_reset_to_record( hope_dsp_buffer_struct * input, hope_dsp_buffer_struct * output )
 {
 	//in this state we want to prepare the input vector to be pop free. 
-
-	//our first try we will just hold this state until zero crossing is detected.
-
-	//do the thing
-	uint32_t left_zc_index = 0;
-	uint32_t right_zc_index = 0;
-	uint32_t start_index = 0;
-	uint32_t end_index = HOPE_DSP_BUFFER_SIZE - 1;
-
-	uint32_t event_zc_found = 0;
 
 	hope_dsp_buffer_struct temp;
 	float temp_left_buffer[ HOPE_DSP_BUFFER_SIZE ];
@@ -239,6 +301,7 @@ state_function_pointer_t m3t_state_reset_to_record( hope_dsp_buffer_struct * inp
 	//fade in temp
 	m3t_helper_block_length_fade_in( &temp );
 
+	bufs[ m3t_track_n_processing ]->m3t_variables->is_recording = 1;	
 	m3t_helper_record_block( bufs[ m3t_track_n_processing ], &temp );
 
 	//go to m3t_state_record
@@ -249,69 +312,7 @@ state_function_pointer_t m3t_state_reset_to_record( hope_dsp_buffer_struct * inp
 
 }
 
-// state_function_pointer_t m3t_state_reset_to_record( hope_dsp_buffer_struct * input, hope_dsp_buffer_struct * output )
-// {
-// 	//in this state we want to prepare the input vector to be pop free. 
 
-// 	//our first try we will just hold this state until zero crossing is detected.
-
-// 	//do the thing
-// 	uint32_t left_zc_index = 0;
-// 	uint32_t right_zc_index = 0;
-// 	uint32_t start_index = 0;
-// 	uint32_t end_index = HOPE_DSP_BUFFER_SIZE - 1;
-
-// 	uint32_t event_zc_found = 0;
-
-// 	hope_dsp_buffer_struct temp;
-// 	float temp_left_buffer[ HOPE_DSP_BUFFER_SIZE ];
-// 	float temp_right_buffer[ HOPE_DSP_BUFFER_SIZE ];
-// 	temp.left_channel_buffer = temp_left_buffer;
-// 	temp.right_channel_buffer = temp_right_buffer;
-
-
-// 	m3t_helper_copy_buffer( input, &temp );
-
-// 	if( m3t_helper_destructive_scan_for_zero_crossing( &temp, &left_zc_index, &right_zc_index ) )
-// 	{
-// 		//a zero crossing was found
-// 		//which is the minimum
-// 		if( left_zc_index < right_zc_index )
-// 		{
-// 			start_index = left_zc_index;
-// 		}
-// 		else
-// 		{
-// 			start_index = right_zc_index;
-// 		}
-// 		//so write the remaining data in the buffer (after zc)
-// 		m3t_helper_record_index_to_index( bufs[ m3t_track_n_processing ] , &temp, start_index, end_index );
-
-// 		event_zc_found = 1;
-// 	}
-// 	else
-// 	{	
-// 		reset_to_record_miss++;
-// 		//if no crossing was found the input needs to be zerod
-// 		// m3t_helper_zero_buffer( input );
-// 	}
-
-// 	if( event_zc_found )
-// 	{
-// 		//go to m3t_state_record
-// 		state_function_pointer_t sfp;
-// 		sfp.next_state = m3t_state_record;
-// 		return sfp;
-// 	}
-// 	else
-// 	{
-// 		//go to m3t_state_reset_to_record
-// 		state_function_pointer_t sfp;
-// 		sfp.next_state = m3t_state_reset_to_record;
-// 		return sfp;
-// 	}
-
-// }
 
 state_function_pointer_t m3t_state_record( hope_dsp_buffer_struct * input, hope_dsp_buffer_struct * output )
 {
@@ -320,35 +321,43 @@ state_function_pointer_t m3t_state_record( hope_dsp_buffer_struct * input, hope_
 	//do the thing
 	m3t_helper_record_block( bufs[ m3t_track_n_processing ], input );
 
-	hope_ct5_led_on_setting = hope_ct5_pwm_rgb_set_solid_red;
-
 	//when the button gets released it is either a tap or a hold.
 	//so move the next state accordingly
 	state_function_pointer_t sfp;
-	if( m3t_event_record_button_was_tapped() )
+	if( m3t_track_n_processing == m3t_track_n_highlighted )
 	{
-		//go to m3t_state_reset
+		hope_ct5_led_on_setting = hope_ct5_pwm_rgb_set_solid_red;
 
-		sfp.next_state = m3t_state_reset;
-		return sfp;
-	}
-	else if( m3t_event_record_button_was_held() )
-	{
+		if( m3t_event_record_button_was_tapped() )
+		{
+			//go to m3t_state_reset
 
-	
-		sfp.next_state = m3t_state_record_to_playback;
-		return sfp;
-	}
-	else if( m3t_event_recording_is_wrapped() )
-	{
+			sfp.next_state = m3t_state_reset;
+			return sfp;
+		}
+		else if( m3t_event_record_button_was_held() )
+		{
 
-		sfp.next_state = m3t_state_overdub;
-		return sfp;
+		
+			sfp.next_state = m3t_state_record_to_playback;
+			return sfp;
+		}
+		else if( m3t_event_recording_is_wrapped() )
+		{
+
+			sfp.next_state = m3t_state_overdub;
+			return sfp;
+		}
+		else
+		{
+
+
+			sfp.next_state = m3t_state_record;
+			return sfp;
+		}
 	}
 	else
 	{
-
-
 		sfp.next_state = m3t_state_record;
 		return sfp;
 	}
@@ -370,8 +379,9 @@ state_function_pointer_t m3t_state_record_to_playback( hope_dsp_buffer_struct * 
 
 	m3t_helper_record_block( bufs[ m3t_track_n_processing ] , &temp  );
 
-		//go to m3t_state_playback
+	bufs[ m3t_track_n_processing ]->m3t_variables->is_recording = 0;	
 
+	//go to m3t_state_playback
 	if( bufs[ m3t_track_n_processing ]->recording_wrapped == 0 )
 	{
 		if( bufs[ m3t_track_n_processing ]->integer_write_head_address == 0 )
@@ -383,17 +393,6 @@ state_function_pointer_t m3t_state_record_to_playback( hope_dsp_buffer_struct * 
 			bufs[ m3t_track_n_processing ]->playback_end = bufs[ m3t_track_n_processing ]->integer_write_head_address -1;
 		}
 
-		// buf->recording_wrapped = 0;
-		// bufs[ m3t_track_n_processing ]->integer_write_head_address = 0;
-		// m3t_helper_append_block( bufs[ m3t_track_n_processing ] , &temp  );
-
-		// bufs[ m3t_track_n_processing ]->playback_end -= HOPE_DSP_BUFFER_SIZE;
-
-		// int32_t temp_addr = (int32_t)bufs[ m3t_track_n_processing ]->playback_end;
-		// temp_addr -= HOPE_DSP_BUFFER_SIZE;
-		// if( temp_addr < 0 )
-		// {
-		// 	temp_addr += 0;
 		// }
 	
 	}
@@ -403,9 +402,9 @@ state_function_pointer_t m3t_state_record_to_playback( hope_dsp_buffer_struct * 
 		// m3t_helper_record_block( bufs[ m3t_track_n_processing ] , &temp  );
 		// bufs[ m3t_track_n_processing ]->playback_end = bufs[ m3t_track_n_processing ]->buffer_size - 1;
 	}
-		state_function_pointer_t sfp;
-		sfp.next_state = m3t_state_playback;
-		return sfp;
+	state_function_pointer_t sfp;
+	sfp.next_state = m3t_state_playback;
+	return sfp;
 
 }
 
@@ -413,85 +412,6 @@ state_function_pointer_t m3t_state_record_to_playback( hope_dsp_buffer_struct * 
 
 uint32_t record_to_playback_miss = 0;
 
-// state_function_pointer_t m3t_state_record_to_playback( hope_dsp_buffer_struct * input, hope_dsp_buffer_struct * output )
-// {
-// 	//we need to trim the end of the recording while starting playback.
-
-// 	//do the thing
-// 	uint32_t left_zc_index = 0;
-// 	uint32_t right_zc_index = 0;
-// 	uint32_t start_index = 0;
-// 	uint32_t end_index = HOPE_DSP_BUFFER_SIZE -1;
-
-// 	uint32_t event_zc_found = 0;
-
-// 	hope_dsp_buffer_struct temp;
-// 	float temp_left_buffer[ HOPE_DSP_BUFFER_SIZE ];
-// 	float temp_right_buffer[ HOPE_DSP_BUFFER_SIZE ];
-// 	temp.left_channel_buffer = temp_left_buffer;
-// 	temp.right_channel_buffer = temp_right_buffer;
-
-// 	m3t_helper_copy_buffer( input, &temp );
-
-// 	if( m3t_helper_destructive_reverse_scan_for_zero_crossing( &temp, &left_zc_index, &right_zc_index ) )
-// 	{
-// 		//a zero crossing was found
-// 		//which is the minimum
-// 		if( left_zc_index > right_zc_index )
-// 		{
-// 			end_index = left_zc_index;
-// 		}
-// 		else
-// 		{
-// 			end_index = right_zc_index;
-// 		}
-// 		//so write the remaining data in the buffer (up to zc)
-// 		m3t_helper_record_index_to_index( bufs[ m3t_track_n_processing ] , &temp , start_index, end_index );
-
-// 		event_zc_found = 1;
-// 	}
-// 	else
-// 	{
-// 		//record block
-// 		record_to_playback_miss++;
-// 		m3t_helper_record_block( bufs[ m3t_track_n_processing ], input );
-// 	}
-
-// 	if( event_zc_found )
-// 	{
-// 		//go to m3t_state_playback
-
-// 		if( bufs[ m3t_track_n_processing ]->recording_wrapped == 0 )
-// 		{
-// 			// buf->recording_wrapped = 0;
-// 			if( bufs[ m3t_track_n_processing ]->integer_write_head_address == 0 )
-// 			{
-// 				bufs[ m3t_track_n_processing ]->playback_end = bufs[ m3t_track_n_processing ]->buffer_size - 1;
-// 			}
-// 			else
-// 			{
-// 				bufs[ m3t_track_n_processing ]->playback_end = bufs[ m3t_track_n_processing ]->integer_write_head_address - 1 ;
-// 			}
-
-// 		}
-// 		else
-// 		{
-// 			//this should never execute because it would be in overdub if the space was wrapped?
-// 			bufs[ m3t_track_n_processing ]->playback_end = bufs[ m3t_track_n_processing ]->buffer_size - 1;
-// 		}
-// 		state_function_pointer_t sfp;
-// 		sfp.next_state = m3t_state_playback;
-// 		return sfp;
-// 	}
-// 	else
-// 	{
-// 		//go to m3t_state_record_to_playback
-// 		state_function_pointer_t sfp;
-// 		sfp.next_state = m3t_state_record_to_playback;
-// 		return sfp;
-// 	}
-
-// }
 
 state_function_pointer_t m3t_state_playback( hope_dsp_buffer_struct * input, hope_dsp_buffer_struct * output )
 {
@@ -499,26 +419,35 @@ state_function_pointer_t m3t_state_playback( hope_dsp_buffer_struct * input, hop
 	//this needs to not be a destructive write (ie just add to output)
 	m3t_helper_playback_block( bufs[ m3t_track_n_processing ], output );
 
-	hope_ct5_led_on_setting = hope_ct5_pwm_rgb_set_solid_blue;
 
 	//in this state you can start playback from the buffer once an appropriate sample is found.	
 
 	//we exit this state if the button was pressed.
 	state_function_pointer_t sfp;
-	if( m3t_event_record_button_pressed() )
+	if( m3t_track_n_processing == m3t_track_n_highlighted )
 	{
-		//go to mtr_state_rec_overdub_1_max
-		//first we need a struct to put the pointer in
 
-		// bufs[ m3t_track_n_processing ]->integer_write_head_address = 0;
-		bufs[ m3t_track_n_processing ]->integer_write_head_address = (uint32_t)( bufs[ m3t_track_n_processing ]->float_read_head_address );
-		sfp.next_state = m3t_state_playback_to_overdub;
-		return sfp;
+		hope_ct5_led_on_setting = hope_ct5_pwm_rgb_set_solid_blue;
+		if( m3t_event_record_button_pressed() )
+		{
+			//go to mtr_state_rec_overdub_1_max
+			//first we need a struct to put the pointer in
+
+			// bufs[ m3t_track_n_processing ]->integer_write_head_address = 0;
+			bufs[ m3t_track_n_processing ]->integer_write_head_address = (uint32_t)( bufs[ m3t_track_n_processing ]->float_read_head_address );
+			sfp.next_state = m3t_state_playback_to_overdub;
+			return sfp;
+		}
+		else
+		{
+			sfp.next_state = m3t_state_playback;
+			return sfp;
+		}
 	}
 	else
 	{
 		sfp.next_state = m3t_state_playback;
-		return sfp;
+		return sfp;		
 	}
 }
 
@@ -538,6 +467,7 @@ state_function_pointer_t m3t_state_playback_to_overdub( hope_dsp_buffer_struct *
 	m3t_helper_copy_buffer( input, &temp );
 
 	m3t_helper_block_length_fade_in( &temp );
+	bufs[ m3t_track_n_processing ]->m3t_variables->is_recording = 1;	
 
 	m3t_helper_overdub_block( bufs[ m3t_track_n_processing ] , &temp, output );
 	// m3t_helper_record_block( bufs[ m3t_track_n_processing ] , &temp  );
@@ -548,67 +478,7 @@ state_function_pointer_t m3t_state_playback_to_overdub( hope_dsp_buffer_struct *
 
 }
 
-// state_function_pointer_t m3t_state_playback_to_overdub( hope_dsp_buffer_struct * input, hope_dsp_buffer_struct * output )
-// {
 
-// 	//need to keep playing what is playing and add the lead in
-// 	//do the thing
-// 	uint32_t left_zc_index = 0;
-// 	uint32_t right_zc_index = 0;
-// 	uint32_t start_index = 0;
-// 	uint32_t end_index = HOPE_DSP_BUFFER_SIZE - 1;
-
-// 	uint32_t event_zc_found = 0;
-
-// 	hope_dsp_buffer_struct temp;
-// 	float temp_left_buffer[ HOPE_DSP_BUFFER_SIZE ];
-// 	float temp_right_buffer[ HOPE_DSP_BUFFER_SIZE ];
-// 	temp.left_channel_buffer = temp_left_buffer;
-// 	temp.right_channel_buffer = temp_right_buffer;
-
-
-// 	m3t_helper_copy_buffer( input, &temp );
-
-// 	if( m3t_helper_destructive_scan_for_zero_crossing( &temp, &left_zc_index, &right_zc_index ) )
-// 	{
-// 		//a zero crossing was found
-// 		//which is the minimum
-// 		if( left_zc_index < right_zc_index )
-// 		{
-// 			start_index = left_zc_index;
-// 		}
-// 		else
-// 		{
-// 			start_index = right_zc_index;
-// 		}
-// 		//so write the remaining data in the buffer (after zc)
-// 		// m3t_helper_overdub_index_to_index( bufs[ m3t_track_n_processing ] , &temp, output, start_index, end_index );
-// 		m3t_helper_overdub_block( bufs[ m3t_track_n_processing ] , &temp, output );
-
-// 		event_zc_found = 1;
-// 	}
-// 	else
-// 	{
-// 		//ifno crossing is found we still need to play back the recording
-// 		m3t_helper_playback_block( bufs[ m3t_track_n_processing ], output );
-// 	}
-
-// 	if( event_zc_found )
-// 	{
-// 		//go to m3t_state_record
-// 		state_function_pointer_t sfp;
-// 		sfp.next_state = m3t_state_overdub;
-// 		return sfp;
-// 	}
-// 	else
-// 	{
-// 		//go to m3t_state_reset_to_record
-// 		state_function_pointer_t sfp;
-// 		sfp.next_state = m3t_state_playback_to_overdub;
-// 		return sfp;
-// 	}
-
-// }
 
 state_function_pointer_t m3t_state_overdub( hope_dsp_buffer_struct * input, hope_dsp_buffer_struct * output )
 {
@@ -619,32 +489,39 @@ state_function_pointer_t m3t_state_overdub( hope_dsp_buffer_struct * input, hope
 	
 	m3t_helper_overdub_block( bufs[ m3t_track_n_processing ], input, output );
 	// m3t_helper_record_block( bufs[ m3t_track_n_processing ] , input  );
-	hope_ct5_led_on_setting = hope_ct5_pwm_rgb_set_solid_green;
 
 	//in this state you can start overdubbing from the buffer once an appropriate sample is found.
 	state_function_pointer_t sfp;
 
 	//exit on button releases, either to reset or to playback
-	if( m3t_event_record_button_was_tapped() )
+	if( m3t_track_n_processing == m3t_track_n_highlighted )
 	{
-		//go to m3t_state_reset
+		hope_ct5_led_on_setting = hope_ct5_pwm_rgb_set_solid_green;
+		if( m3t_event_record_button_was_tapped() )
+		{
+			//go to m3t_state_reset
 
-		sfp.next_state = m3t_state_overdub_to_reset;
-		return sfp;
-	}
-	else if( m3t_event_record_button_was_held() )
-	{
-				
-		sfp.next_state = m3t_state_overdub_to_playback;
-		return sfp;
+			sfp.next_state = m3t_state_overdub_to_reset;
+			return sfp;
+		}
+		else if( m3t_event_record_button_was_held() )
+		{
+					
+			sfp.next_state = m3t_state_overdub_to_playback;
+			return sfp;
+		}
+		else
+		{
+
+			sfp.next_state = m3t_state_overdub;
+			return sfp;
+		}
 	}
 	else
 	{
-
 		sfp.next_state = m3t_state_overdub;
 		return sfp;
 	}
-
 }
 state_function_pointer_t m3t_state_overdub_to_playback( hope_dsp_buffer_struct * input, hope_dsp_buffer_struct * output )
 {
@@ -662,6 +539,7 @@ state_function_pointer_t m3t_state_overdub_to_playback( hope_dsp_buffer_struct *
 
 		m3t_helper_overdub_block( bufs[ m3t_track_n_processing ] , &temp , output );
 	// m3t_helper_record_block( bufs[ m3t_track_n_processing ] , &temp  );
+	bufs[ m3t_track_n_processing ]->m3t_variables->is_recording = 0;	
 
 
 
@@ -670,67 +548,6 @@ state_function_pointer_t m3t_state_overdub_to_playback( hope_dsp_buffer_struct *
 		return sfp;
 
 }
-// state_function_pointer_t m3t_state_overdub_to_playback( hope_dsp_buffer_struct * input, hope_dsp_buffer_struct * output )
-// {
-
-// 	//need to keep playing what is playing and add the lead in
-// 	//do the thing
-// 	uint32_t left_zc_index = 0;
-// 	uint32_t right_zc_index = 0;
-// 	uint32_t start_index = 0;
-// 	uint32_t end_index = HOPE_DSP_BUFFER_SIZE - 1;
-
-// 	uint32_t event_zc_found = 0;
-
-// 	hope_dsp_buffer_struct temp;
-// 	float temp_left_buffer[ HOPE_DSP_BUFFER_SIZE ];
-// 	float temp_right_buffer[ HOPE_DSP_BUFFER_SIZE ];
-// 	temp.left_channel_buffer = temp_left_buffer;
-// 	temp.right_channel_buffer = temp_right_buffer;
-
-
-// 	m3t_helper_copy_buffer( input, &temp );
-
-// 	if( m3t_helper_destructive_reverse_scan_for_zero_crossing( &temp, &left_zc_index, &right_zc_index ) )
-// 	{
-// 		//a zero crossing was found
-// 		//which is the minimum
-// 		if( left_zc_index > right_zc_index )
-// 		{
-// 			end_index = left_zc_index;
-// 		}
-// 		else
-// 		{
-// 			end_index = right_zc_index;
-// 		}
-// 		//so write the remaining data in the buffer (up to zc)
-// 		m3t_helper_overdub_block( bufs[ m3t_track_n_processing ] , &temp , output );
-
-// 		event_zc_found = 1;
-// 	}
-// 	else
-// 	{
-// 		//if no crossing was found the input needs to be zerod
-// 		// m3t_helper_zero_buffer( input );
-// 		m3t_helper_overdub_block( bufs[ m3t_track_n_processing ] , input, output );
-// 	}
-
-// 	if( event_zc_found )
-// 	{
-// 		//go to m3t_state_record
-// 		state_function_pointer_t sfp;
-// 		sfp.next_state = m3t_state_playback;
-// 		return sfp;
-// 	}
-// 	else
-// 	{
-// 		//go to m3t_state_reset_to_record
-// 		state_function_pointer_t sfp;
-// 		sfp.next_state = m3t_state_overdub_to_playback;
-// 		return sfp;
-// 	}
-
-// }
 
 state_function_pointer_t m3t_state_overdub_to_reset( hope_dsp_buffer_struct * input, hope_dsp_buffer_struct * output )
 {
@@ -739,6 +556,7 @@ state_function_pointer_t m3t_state_overdub_to_reset( hope_dsp_buffer_struct * in
 	m3t_helper_overdub_block( bufs[ m3t_track_n_processing ], input, output );
 
 	m3t_helper_block_length_fade_out( output );
+	bufs[ m3t_track_n_processing ]->m3t_variables->is_recording = 0;	
 
 	state_function_pointer_t sfp;
 	sfp.next_state = m3t_state_reset;
@@ -811,11 +629,11 @@ uint32_t m3t_event_recording_is_wrapped( )
 
 void m3t_helper_zero_buffer( hope_dsp_buffer_struct * input )
 {
-		for( uint32_t i = 0; i < HOPE_DSP_BUFFER_SIZE; i++)
-		{
-			input->left_channel_buffer[i] = 0;
-			input->right_channel_buffer[i] = 0;
-		}
+	for( uint32_t i = 0; i < HOPE_DSP_BUFFER_SIZE; i++)
+	{
+		input->left_channel_buffer[i] = 0;
+		input->right_channel_buffer[i] = 0;
+	}
 
 }
 
@@ -907,6 +725,7 @@ void m3t_helper_overdub_block( ct5_buffer_t * buf, hope_dsp_buffer_struct * inpu
 	// buf->integer_write_head_address = ( HOPE_DSP_BUFFER_SIZE + buf->integer_write_head_address ) % buf->playback_end;
 
 	//read address vector
+	buf->desired_dir = buf->m3t_variables->desired_dir;
 	float read_head_address_vector[ HOPE_DSP_BUFFER_SIZE ];
 	for(uint32_t i = 0; i < HOPE_DSP_BUFFER_SIZE; i++)
 	{
@@ -1169,6 +988,7 @@ void m3t_helper_overdub_index_to_index( ct5_buffer_t * buf, hope_dsp_buffer_stru
 void m3t_helper_playback_block( ct5_buffer_t * buf,  hope_dsp_buffer_struct * output )
 {
 	// buf->desired_dir = 1.1;
+	buf->desired_dir = buf->m3t_variables->desired_dir;
 	float read_head_address_vector[ HOPE_DSP_BUFFER_SIZE ];
 	for(uint32_t i = 0; i < HOPE_DSP_BUFFER_SIZE; i++)
 	{
@@ -1228,13 +1048,13 @@ void m3t_helper_playback_block( ct5_buffer_t * buf,  hope_dsp_buffer_struct * ou
 
 		alpha = read_head_address_vector[i] - low_address;
 		beta = 1.0 - alpha;
-		output->left_channel_buffer[i] += 
+		output->left_channel_buffer[i] = 
 				beta * (*(low_address + buf->left_channel_physical_memory_start_address)) 
 			+ 	alpha * (*((high_address + buf->left_channel_physical_memory_start_address))) ;
 	
 		// output->left_channel_buffer[i] *= read_head_volume_vector[i];
 
-		output->right_channel_buffer[i] += 
+		output->right_channel_buffer[i] = 
 				beta * (*(low_address + buf->right_channel_physical_memory_start_address))
 			+ 	alpha * (*((high_address + buf->right_channel_physical_memory_start_address))) ;
 
@@ -1383,5 +1203,14 @@ void m3t_helper_append_block( ct5_buffer_t * buf , hope_dsp_buffer_struct *input
 			// buf->playback_end = buf->buffer_size - 1;
 			// buf->playback_start = 0;
 		}
+	}
+}
+
+void m3t_helper_add_two_dsp_buffers( hope_dsp_buffer_struct * input_1, hope_dsp_buffer_struct * input_2, hope_dsp_buffer_struct * output )
+{
+	for( uint32_t i = 0; i < HOPE_DSP_BUFFER_SIZE; i++)
+	{
+		output->left_channel_buffer[i] = input_1->left_channel_buffer[i] + input_2->left_channel_buffer[i];
+		output->right_channel_buffer[i] = input_1->right_channel_buffer[i] + input_2->right_channel_buffer[i];
 	}
 }
