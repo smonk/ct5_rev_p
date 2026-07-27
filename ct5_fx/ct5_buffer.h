@@ -47,6 +47,10 @@ typedef struct {
 	float dir_increment;
 	float * dir_vector;
 
+	float desired_playback_volume;
+	float current_playback_volume;
+	float playback_volume_increment;
+
 	//this is the read head gain.
 	float * read_head_gain_vector;
 

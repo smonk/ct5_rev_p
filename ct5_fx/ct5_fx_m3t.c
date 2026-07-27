@@ -129,6 +129,10 @@ void ct5_fx_m3t_init( )
 		bufs[i]->playback_end = 0;
 		bufs[i]->recording_wrapped = 0;
 
+		bufs[i]->desired_playback_volume = 1.0;
+		bufs[i]->current_playback_volume = 1.0;
+		bufs[i]->playback_volume_increment = 0.0005;		
+
 	}
 
 	track_0_sfp.next_state = m3t_state_reset;
@@ -430,10 +434,11 @@ state_function_pointer_t m3t_state_playback( hope_dsp_buffer_struct * input, hop
 		hope_ct5_led_on_setting = hope_ct5_pwm_rgb_set_solid_blue;
 		if( m3t_event_record_button_pressed() )
 		{
-			//go to mtr_state_rec_overdub_1_max
-			//first we need a struct to put the pointer in
-
-			// bufs[ m3t_track_n_processing ]->integer_write_head_address = 0;
+			//fade out the playback buffer?
+			//we face this out because otherwise there is a guarunteed discontinuity based on 
+			//the all of a sudden movement of the write address head. 
+			//it is possible just some smarter math can solve this without the need to fade.
+			m3t_helper_block_length_fade_out( output );
 			bufs[ m3t_track_n_processing ]->integer_write_head_address = (uint32_t)( bufs[ m3t_track_n_processing ]->float_read_head_address );
 			sfp.next_state = m3t_state_playback_to_overdub;
 			return sfp;
@@ -708,8 +713,31 @@ void m3t_helper_record_index_to_index( ct5_buffer_t * buf, hope_dsp_buffer_struc
 
 void m3t_helper_overdub_block( ct5_buffer_t * buf, hope_dsp_buffer_struct * input, hope_dsp_buffer_struct * output )
 {
+	
+	//we need to collapse this into one for loop.
+
 	//write head address vector
 	uint32_t write_head_address_vector[ HOPE_DSP_BUFFER_SIZE ];
+	
+	//write head volume vector
+	float write_head_volume_vector[ HOPE_DSP_BUFFER_SIZE ];
+
+	//read address vector
+	buf->desired_dir = buf->m3t_variables->desired_dir;
+	float read_head_address_vector[ HOPE_DSP_BUFFER_SIZE ];
+
+	//playback volume
+	buf->desired_playback_volume = buf->m3t_variables->playback_volume;
+	float playback_volume_vector[ HOPE_DSP_BUFFER_SIZE ];
+
+	//read volume vector
+	float collision_zone_size = 100.0;
+	float dead_zone_distance = 5.0;
+	float read_head_volume_vector[ HOPE_DSP_BUFFER_SIZE ];
+
+	//for linear interpolation of read data
+	float alpha, beta;
+	uint32_t low_address, high_address;
 
 	for(uint32_t i = 0; i < HOPE_DSP_BUFFER_SIZE; i++)
 	{
@@ -721,14 +749,6 @@ void m3t_helper_overdub_block( ct5_buffer_t * buf, hope_dsp_buffer_struct * inpu
 			buf->integer_write_head_address = 0;
 		}
 
-	}
-	// buf->integer_write_head_address = ( HOPE_DSP_BUFFER_SIZE + buf->integer_write_head_address ) % buf->playback_end;
-
-	//read address vector
-	buf->desired_dir = buf->m3t_variables->desired_dir;
-	float read_head_address_vector[ HOPE_DSP_BUFFER_SIZE ];
-	for(uint32_t i = 0; i < HOPE_DSP_BUFFER_SIZE; i++)
-	{
 		if( fabs(buf->desired_dir - buf->current_dir) > buf->dir_increment )
 		{
 			if(buf->desired_dir - buf->current_dir > 0)
@@ -758,18 +778,30 @@ void m3t_helper_overdub_block( ct5_buffer_t * buf, hope_dsp_buffer_struct * inpu
 		}
 
 		read_head_address_vector[i] = buf->float_read_head_address;
-	}
 
-	//read volume vector
-	//next calculate the read head volume based on collision detection
-	
-	float collision_zone_size = 100.0;
-	float dead_zone_distance = 5.0;
-	float read_head_volume_vector[ HOPE_DSP_BUFFER_SIZE ];
-	// volatile uint32_t temp = 0;
-	// uint32_t prev = 0;
-	for(uint32_t i = 0; i < HOPE_DSP_BUFFER_SIZE; i++)
-	{
+
+		// for(uint32_t i = 0; i < HOPE_DSP_BUFFER_SIZE; i++)
+		// {
+			if( fabs(buf->desired_playback_volume - buf->current_playback_volume) > buf->playback_volume_increment )
+			{
+				if(buf->desired_playback_volume - buf->current_playback_volume > 0)
+				{
+					buf->current_playback_volume = buf->current_playback_volume + buf->playback_volume_increment;
+				}
+				else
+				{
+					buf->current_playback_volume = buf->current_playback_volume - buf->playback_volume_increment;
+				}
+			}
+			else
+			{
+				buf->current_playback_volume = buf->desired_playback_volume;
+			}
+
+			playback_volume_vector[i] = buf->current_playback_volume;
+		// }
+
+
 		float address_difference = fabs(read_head_address_vector[i] - (float)write_head_address_vector[i]);
 		if( address_difference < dead_zone_distance )
 		{
@@ -791,27 +823,12 @@ void m3t_helper_overdub_block( ct5_buffer_t * buf, hope_dsp_buffer_struct * inpu
 		{
 			read_head_volume_vector[i] = 1.0;
 		}
-		read_head_volume_vector[i] = 1.0;
+		// read_head_volume_vector[i] = 1.0;
 
-	}	
 
-	//write volume vector
-	//calculate the write head volume vector
-	float write_head_volume_vector[ HOPE_DSP_BUFFER_SIZE ];
-	for(uint32_t i = 0; i < HOPE_DSP_BUFFER_SIZE; i++)
-	{
+
 		write_head_volume_vector[i] = 1.0 ;
-	}
 
-
-	//then read and write per sample.
-	// float read_head_data_left[ HOPE_DSP_BUFFER_SIZE ];
-	// float read_head_data_right[ HOPE_DSP_BUFFER_SIZE ];
-
-	float alpha, beta;
-	uint32_t low_address, high_address;
-	for(uint32_t i = 0; i < HOPE_DSP_BUFFER_SIZE; i++)
-	{
 		low_address = (uint32_t)read_head_address_vector[i];
 		high_address = (uint32_t)read_head_address_vector[i] + 1;
 		if( high_address > buf->playback_end )
@@ -825,13 +842,13 @@ void m3t_helper_overdub_block( ct5_buffer_t * buf, hope_dsp_buffer_struct * inpu
 				beta * (*(low_address + buf->left_channel_physical_memory_start_address)) 
 			+ 	alpha * (*((high_address + buf->left_channel_physical_memory_start_address))) ;
 
-		output->left_channel_buffer[i] *= read_head_volume_vector[i];
+		output->left_channel_buffer[i] *= read_head_volume_vector[i] * playback_volume_vector[i];
 
 		output->right_channel_buffer[i] = 
 				beta * (*(low_address + buf->right_channel_physical_memory_start_address))
 			+ 	alpha * (*((high_address + buf->right_channel_physical_memory_start_address))) ;
 
-		output->right_channel_buffer[i] *= read_head_volume_vector[i];
+		output->right_channel_buffer[i] *= read_head_volume_vector[i] * playback_volume_vector[i];
 
 		//now write
 		*((write_head_address_vector[i] + buf->left_channel_physical_memory_start_address))  
@@ -839,8 +856,12 @@ void m3t_helper_overdub_block( ct5_buffer_t * buf, hope_dsp_buffer_struct * inpu
 
 		*((write_head_address_vector[i] + buf->right_channel_physical_memory_start_address))
 			+= input->right_channel_buffer[i] * write_head_volume_vector[i];
+
+
+
+
 	}
-	
+
 
 }
 
@@ -990,6 +1011,7 @@ void m3t_helper_playback_block( ct5_buffer_t * buf,  hope_dsp_buffer_struct * ou
 	// buf->desired_dir = 1.1;
 	buf->desired_dir = buf->m3t_variables->desired_dir;
 	float read_head_address_vector[ HOPE_DSP_BUFFER_SIZE ];
+
 	for(uint32_t i = 0; i < HOPE_DSP_BUFFER_SIZE; i++)
 	{
 		if( fabs(buf->desired_dir - buf->current_dir) > buf->dir_increment )
@@ -1024,6 +1046,31 @@ void m3t_helper_playback_block( ct5_buffer_t * buf,  hope_dsp_buffer_struct * ou
 		read_head_address_vector[i] = buf->float_read_head_address;
 	}
 
+	buf->desired_playback_volume = buf->m3t_variables->playback_volume;
+	float playback_volume_vector[ HOPE_DSP_BUFFER_SIZE ];
+
+	for(uint32_t i = 0; i < HOPE_DSP_BUFFER_SIZE; i++)
+	{
+		if( fabs(buf->desired_playback_volume - buf->current_playback_volume) > buf->playback_volume_increment )
+		{
+			if(buf->desired_playback_volume - buf->current_playback_volume > 0)
+			{
+				buf->current_playback_volume = buf->current_playback_volume + buf->playback_volume_increment;
+			}
+			else
+			{
+				buf->current_playback_volume = buf->current_playback_volume - buf->playback_volume_increment;
+			}
+		}
+		else
+		{
+			buf->current_playback_volume = buf->desired_playback_volume;
+		}
+
+		playback_volume_vector[i] = buf->current_playback_volume;
+	}
+
+
 	// //now determine the volume vector as well
 	// float read_head_volume_vector[ HOPE_DSP_BUFFER_SIZE ];
 	// for(uint32_t i = 0; i < HOPE_DSP_BUFFER_SIZE; i++)
@@ -1052,13 +1099,13 @@ void m3t_helper_playback_block( ct5_buffer_t * buf,  hope_dsp_buffer_struct * ou
 				beta * (*(low_address + buf->left_channel_physical_memory_start_address)) 
 			+ 	alpha * (*((high_address + buf->left_channel_physical_memory_start_address))) ;
 	
-		// output->left_channel_buffer[i] *= read_head_volume_vector[i];
+		output->left_channel_buffer[i] *= playback_volume_vector[i];
 
 		output->right_channel_buffer[i] = 
 				beta * (*(low_address + buf->right_channel_physical_memory_start_address))
 			+ 	alpha * (*((high_address + buf->right_channel_physical_memory_start_address))) ;
 
-		// output->right_channel_buffer[i] *= read_head_volume_vector[i];
+		output->right_channel_buffer[i] *= playback_volume_vector[i];
 
 	}
 
