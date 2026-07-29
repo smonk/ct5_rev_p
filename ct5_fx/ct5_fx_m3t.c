@@ -160,11 +160,11 @@ void ct5_fx_m3t( hope_dsp_buffer_struct * input, hope_dsp_buffer_struct * output
 		return;
 	}
 
-	// make the audio mono for debugging
-	for(uint32_t i = 0; i < HOPE_DSP_BUFFER_SIZE; i++)
-	{
-		input->right_channel_buffer[i] = input->left_channel_buffer[i];
-	}
+	// // make the audio mono for debugging
+	// for(uint32_t i = 0; i < HOPE_DSP_BUFFER_SIZE; i++)
+	// {
+	// 	input->right_channel_buffer[i] = input->left_channel_buffer[i];
+	// }
 	
 
 	//this is a lock to block n switching when any track is recording.
