@@ -72,7 +72,10 @@ state_function_pointer_t m1c_state_holding_to_reset( hope_dsp_buffer_struct * in
 
 
 
+static uint32_t m1c_track_n_processing = 0;
+static uint32_t m1c_track_n_highlighted = 0;
 
+static uint32_t m1c_track_n_change_lock = 0;
 
 
 // ██╗███╗   ██╗██╗████████╗
@@ -148,6 +151,67 @@ void ct5_fx_m1c( hope_dsp_buffer_struct * input, hope_dsp_buffer_struct * output
 		is_init = 1;
 		return;
 	}
+
+	ct5_fx_get_m1c_variables( my_m1c_variables );
+	m1c_track_n_change_lock = 0;
+	for( uint32_t i = 0; i < M1_CT5_LINKS ; i++ )
+	{
+		if( bufs[i]->m1c_variables->is_recording )
+		{
+			m1c_track_n_change_lock = 1;
+		}
+	}
+	if( m1c_track_n_change_lock == 0 )
+	{
+		m1c_track_n_highlighted = my_m1c_variables->m1c_n_switch - 1;	
+	}
+	
+	//zero the output buffer
+	m1c_helper_zero_buffer( output );
+
+	hope_dsp_buffer_struct temp_buf;
+	temp_buf.num_samples_per_channel = HOPE_DSP_BUFFER_SIZE;
+	float temp_left_channel_buffer[HOPE_DSP_BUFFER_SIZE];
+	float temp_right_channel_buffer[HOPE_DSP_BUFFER_SIZE];
+	temp_buf.left_channel_buffer = temp_left_channel_buffer;
+	temp_buf.right_channel_buffer = temp_right_channel_buffer;
+
+
+	// now each sfp processed adds to the output buffer
+	m1c_helper_zero_buffer( &temp_buf );
+	m1c_track_n_processing = 0;
+	if( m1c_track_n_highlighted == 0 )
+	{
+		ct5_fx_get_m1c_variables( bufs[0]->m1c_variables );
+	}
+	track_0_sfp = track_0_sfp.next_state( input, &temp_buf );
+	m1c_helper_add_two_dsp_buffers( output, &temp_buf, output );
+
+	m1c_helper_zero_buffer( &temp_buf );
+	m1c_track_n_processing = 1;
+	if( m1c_track_n_highlighted == 1 )
+	{
+		ct5_fx_get_m1c_variables( bufs[1]->m1c_variables );
+	}
+	track_1_sfp = track_1_sfp.next_state( input, &temp_buf );
+	m1c_helper_add_two_dsp_buffers( output, &temp_buf, output );
+	
+	m1c_helper_zero_buffer( &temp_buf );
+	m1c_track_n_processing = 2;
+	if( m1c_track_n_highlighted == 2 )
+	{
+		ct5_fx_get_m1c_variables( bufs[2]->m1c_variables );
+	}
+	track_2_sfp = track_2_sfp.next_state( input, &temp_buf );
+	m1c_helper_add_two_dsp_buffers( output, &temp_buf, output );
+	
+
+	//now at the end we need to mix the input and output accordingly.
+	float wet_gain, dry_gain;
+	wet_gain = my_m1c_variables->wet_gain;
+	dry_gain = my_m1c_variables->dry_gain;
+
+	m1c_helper_wet_dry_mix( input, dry_gain, output, wet_gain, output );
 
 
 	
