@@ -42,6 +42,24 @@ void ct5_fx_ct5_init()
 
 }
 
+void ct5_fx_mute( hope_dsp_buffer_struct * input, hope_dsp_buffer_struct * output )
+{
+	for(uint32_t i = 0; i < HOPE_DSP_BUFFER_SIZE; i++)
+	{
+		output->left_channel_buffer[i] = 0;
+		output->right_channel_buffer[i] = 0;
+	}	
+}
+
+void ct5_fx_pass_through( hope_dsp_buffer_struct * input, hope_dsp_buffer_struct * output )
+{
+	for(uint32_t i = 0; i < HOPE_DSP_BUFFER_SIZE; i++)
+	{
+		output->left_channel_buffer[i] = input->left_channel_buffer[i];
+		output->right_channel_buffer[i] = input->right_channel_buffer[i];
+	}	
+}
+
 void ct5_fx_ct5( hope_dsp_buffer_struct * input, hope_dsp_buffer_struct * output )
 {
 	static uint32_t algo_is_init = 0;
@@ -236,4 +254,103 @@ void ct5_fx_ct5( hope_dsp_buffer_struct * input, hope_dsp_buffer_struct * output
 
 	//the end?
 	algo_n++;
+}
+
+
+
+
+float temp_gain_vector[ HOPE_DSP_BUFFER_SIZE ];
+float temp_env_follower[ HOPE_DSP_BUFFER_SIZE ];
+
+void ct5_fx_noise_gate( hope_dsp_buffer_struct * input, hope_dsp_buffer_struct * output )
+{
+
+	uint16_t num_samples = HOPE_DSP_BUFFER_SIZE;
+	uint16_t num_channels = HOPE_DSP_NUM_CHANNELS;
+	static float current_gain = 0.0;
+	
+	float upper_threshold = 0.001;  //60db
+	float lower_threshold = 0.00001; //90db+
+
+	static float last_frame_env_end = 0;
+
+	float env_decay_coef = 0.99;
+
+	float attack = 0.1;
+	float release = 0.001;
+
+	// envelope detector
+	float temp = 0;
+	temp = fabs(input->left_channel_buffer[0]);
+	if ( temp > last_frame_env_end )
+	{
+		temp_env_follower[0] = temp;
+	}
+	else
+	{
+		temp_env_follower[0] = last_frame_env_end * env_decay_coef;
+	}	
+
+	for( uint16_t i = 1; i < num_samples; i++ )
+	{
+		temp = fabs( input->left_channel_buffer[i] );
+		if( temp > temp_env_follower[i-1] )
+		{
+			temp_env_follower[i] = temp;
+		}
+		else
+		{
+			temp_env_follower[i] = temp_env_follower[i-1] * env_decay_coef;
+		}
+	}
+	last_frame_env_end = temp_env_follower[num_samples-1];
+
+
+	static uint32_t gate_state = 0;
+
+	for( uint16_t i = 0; i < num_samples; i++ )
+	{
+		if( temp_env_follower[i] > upper_threshold )
+		{
+			gate_state = 1;	//increase gain
+		}   
+		else if( temp_env_follower[i] < lower_threshold )
+		{
+			gate_state = 0;
+			//decrease gain
+		}
+
+		if(gate_state == 1)
+		{
+			current_gain += attack;
+			if( current_gain > 1.0 )
+			{
+				current_gain = 1.0;
+			}
+			temp_gain_vector[i] = current_gain;
+		}
+		else
+		{
+			current_gain -= release;
+			if( current_gain < 0.0 )
+			{	
+				current_gain = 0.0;
+			}
+			temp_gain_vector[i] = current_gain;
+		}
+
+	}
+
+
+
+
+	// float volume = my_ext_pot_and_cvin[0].normalized_value;
+
+	for( uint16_t i = 0; i < num_samples; i++ )
+	{
+		output->left_channel_buffer[i] = temp_gain_vector[i]*input->left_channel_buffer[i];;
+		// output->left_channel_buffer[i] = input->left_channel_buffer[i];;
+		output->right_channel_buffer[i] = 0;
+		// output->right_channel_buffer[i] =input->left_channel_buffer[i];
+	}
 }

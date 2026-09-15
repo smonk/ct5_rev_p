@@ -348,8 +348,11 @@ int main(void)
     //the dsp function
     // my_fx_pass_through( my_input_dsp_buffer, my_output_dsp_buffer );
     // ct5_fx_ct5( my_input_dsp_buffer, my_output_dsp_buffer );
-    // ct5_fx_m2r( my_input_dsp_buffer, my_output_dsp_buffer );
-    ct5_fx_m3t( my_input_dsp_buffer, my_output_dsp_buffer );
+    ct5_fx_m2r( my_input_dsp_buffer, my_output_dsp_buffer );
+    // ct5_fx_m3t( my_input_dsp_buffer, my_output_dsp_buffer );
+    // ct5_fx_mute( my_input_dsp_buffer, my_output_dsp_buffer );
+    // ct5_fx_pass_through( my_input_dsp_buffer, my_output_dsp_buffer );
+    // ct5_fx_noise_gate( my_input_dsp_buffer, my_output_dsp_buffer );
 
     //start an adc conversion
     hope_pot_and_cvin_start_dma_conversion();
