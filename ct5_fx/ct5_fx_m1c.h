@@ -10,7 +10,20 @@ typedef struct{
 	float wet_gain;
 	float dry_gain;
 	float desired_dir;
-	float buffer_size;
-	float feedback;
-
+	uint32_t current_buffer_size;  //in samples
+	uint32_t desired_buffer_size;
+	float current_feedback_volume; //what was the feedback volume when you leave the algo
+	float desired_feedback_volume; //what is the desired feedback volume from the pot
+	float desired_feedback_volume_override;
+	uint32_t use_feedback_volume_override;
+	float current_write_head_volume;
+	float desired_write_head_volume;
 }m1c_variables_t;
+
+#endif
+/*
+	feedback volume can come from a pot. 
+	feedback volume must also be able to be overridden by the state machine. 
+	this override volume should be selectable by another variable
+
+*/

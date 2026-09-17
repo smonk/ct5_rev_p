@@ -1035,13 +1035,13 @@ float m2r_helper_distance_to_end( ct5_buffer_t * buf )
 
 float m2r_helper_distance_to_gain_coefficient( float distance )
 {
-	if( distance >= HOPE_DSP_BUFFER_SIZE )
+	if( distance >= (HOPE_DSP_BUFFER_SIZE * 4) )
 	{
 		return 1.0;
 	}
 	else
 	{
-		return distance / HOPE_DSP_BUFFER_SIZE;
+		return distance / (HOPE_DSP_BUFFER_SIZE * 4);
 	}
 }
 

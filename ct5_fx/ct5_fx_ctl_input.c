@@ -32,6 +32,11 @@ float stash_pot_array[3][ HOPE_NUM_POTS_AND_CVIN ] = {0};
 //1 means use stashed, 0 means use live
 uint8_t stashed_or_live_array[3][ HOPE_NUM_POTS_AND_CVIN ] = {0};
 
+void ct5_fx_get_m1c_variables(m1c_variables_t *m1c_variables)
+{
+	
+}
+
 void ct5_fx_get_m2r_variables(m2r_variables_t *m2r_variables)
 {
 

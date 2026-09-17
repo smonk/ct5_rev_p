@@ -9,11 +9,14 @@
 #define CT5_BUFFER_MEM_BASE_ADDRESS ( 0x90000000 )
 //the valid address range should be
 //0x90000000 to 0x907fffff
+#include "ct5_fx_m1c.h"
 #include "ct5_fx_m2r.h"
 #include "ct5_fx_m3t.h"
 
 typedef struct {
 	
+	uint32_t this_buffers_index;
+
 	//these are actual memory addresses
 	float * physical_memory_start_address;
 	float * physical_memory_end_address;
@@ -37,7 +40,6 @@ typedef struct {
 
 	//the write head address is always an integer and we always write in a continuous block
 	uint32_t integer_write_head_address;
-
 
 	uint32_t playback_counter;
 
@@ -67,7 +69,11 @@ typedef struct {
 	uint32_t recording_length;
 	uint32_t recording_wrapped;
 
-	//a pointer to a m2r vars type?
+
+	//a pointer to a m1c vars type
+	m1c_variables_t * m1c_variables;
+
+	//a pointer to a m2r vars type
 	m2r_variables_t * m2r_variables;
 
 	//a pointer to m3t variables
