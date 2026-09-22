@@ -6,7 +6,8 @@
 void ct5_fx_m1c( hope_dsp_buffer_struct * input, hope_dsp_buffer_struct * output );
 
 typedef struct{
-	uint32_t m1c_n_switch;
+	uint32_t n_switch;
+	uint32_t last_n_switch;
 	float wet_gain;
 	float dry_gain;
 	float desired_dir;

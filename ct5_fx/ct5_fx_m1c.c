@@ -98,6 +98,7 @@ static uint32_t m1c_link_n_highlighted = 0;
 static uint32_t m1c_link_n_change_lock = 0;
 
 
+
 // ██╗███╗   ██╗██╗████████╗
 // ██║████╗  ██║██║╚══██╔══╝
 // ██║██╔██╗ ██║██║   ██║   
@@ -192,42 +193,64 @@ void ct5_fx_m1c( hope_dsp_buffer_struct * input, hope_dsp_buffer_struct * output
 	m1c_helper_zero_buffer( output );
 
 	
-	hope_dsp_buffer_struct temp_buf;
-	temp_buf.num_samples_per_channel = HOPE_DSP_BUFFER_SIZE;
-	float temp_left_channel_buffer[HOPE_DSP_BUFFER_SIZE];
-	float temp_right_channel_buffer[HOPE_DSP_BUFFER_SIZE];
-	temp_buf.left_channel_buffer = temp_left_channel_buffer;
-	temp_buf.right_channel_buffer = temp_right_channel_buffer;
+	hope_dsp_buffer_struct temp_buf_0;
+	temp_buf_0.num_samples_per_channel = HOPE_DSP_BUFFER_SIZE;
+	float temp_0_left_channel_buffer[HOPE_DSP_BUFFER_SIZE];
+	float temp_0_right_channel_buffer[HOPE_DSP_BUFFER_SIZE];
+	temp_buf_0.left_channel_buffer = temp_0_left_channel_buffer;
+	temp_buf_0.right_channel_buffer = temp_0_right_channel_buffer;
 
+	//do the above but for a temp_buf_1
+	hope_dsp_buffer_struct temp_buf_1;
+	temp_buf_1.num_samples_per_channel = HOPE_DSP_BUFFER_SIZE;
+	float temp_1_left_channel_buffer[HOPE_DSP_BUFFER_SIZE];
+	float temp_1_right_channel_buffer[HOPE_DSP_BUFFER_SIZE];
+	temp_buf_1.left_channel_buffer = temp_1_left_channel_buffer;
+	temp_buf_1.right_channel_buffer = temp_1_right_channel_buffer;
+	
+	//do the same but for a temp_buf_2
+	hope_dsp_buffer_struct temp_buf_2;
+	temp_buf_2.num_samples_per_channel = HOPE_DSP_BUFFER_SIZE;
+	float temp_2_left_channel_buffer[HOPE_DSP_BUFFER_SIZE];
+	float temp_2_right_channel_buffer[HOPE_DSP_BUFFER_SIZE];
+	temp_buf_2.left_channel_buffer = temp_2_left_channel_buffer;
+	temp_buf_2.right_channel_buffer = temp_2_right_channel_buffer;
 
-	m1c_helper_zero_buffer( &temp_buf );
+	//temp_buf_0 will be the output of the link 0
+	m1c_helper_zero_buffer( &temp_buf_0 );
 	m1c_link_n_processing = 0;
-	// if( m1c_link_n_highlighted == 0 )
+	if( m1c_link_n_highlighted == 0 )
 	{
 		ct5_fx_get_m1c_variables( bufs[0]->m1c_variables );
 	}
 	
 	//sfp means state function pointer
-	link_0_sfp = link_0_sfp.next_state( input, &temp_buf );
-	m1c_helper_add_two_dsp_buffers( output, &temp_buf, output );
+	link_0_sfp = link_0_sfp.next_state( input, &temp_buf_0 );
+	//mix down the result into the output buffer
+	m1c_helper_add_two_dsp_buffers( output, &temp_buf_0, output );
 
-	// m1c_helper_zero_buffer( &temp_buf );
-	// m1c_link_n_processing = 1;
-	// if( m1c_link_n_highlighted == 1 )
-	// {
-	// 	ct5_fx_get_m1c_variables( bufs[1]->m1c_variables );
-	// }
-	// track_1_sfp = track_1_sfp.next_state( input, &temp_buf );
-	// m1c_helper_add_two_dsp_buffers( output, &temp_buf, output );
+
+	m1c_helper_zero_buffer( &temp_buf_1 );
+	m1c_link_n_processing = 1;
+	if( m1c_link_n_highlighted == 1 )
+	{
+		ct5_fx_get_m1c_variables( bufs[1]->m1c_variables );
+	}
+	//the input is now temp_buf_0
+	link_1_sfp = link_1_sfp.next_state( &temp_buf_0, &temp_buf_1 );
+	//mix down the result into the output buffer
+	m1c_helper_add_two_dsp_buffers( output, &temp_buf_1, output );
 	
-	// m1c_helper_zero_buffer( &temp_buf );
-	// m1c_link_n_processing = 2;
-	// if( m1c_link_n_highlighted == 2 )
-	// {
-	// 	ct5_fx_get_m1c_variables( bufs[2]->m1c_variables );
-	// }
-	// track_2_sfp = track_2_sfp.next_state( input, &temp_buf );
-	// m1c_helper_add_two_dsp_buffers( output, &temp_buf, output );
+
+	m1c_helper_zero_buffer( &temp_buf_2 );
+	m1c_link_n_processing = 2;
+	if( m1c_link_n_highlighted == 2 )
+	{
+		ct5_fx_get_m1c_variables( bufs[2]->m1c_variables );
+	}
+	link_2_sfp = link_2_sfp.next_state( &temp_buf_1, &temp_buf_2 );
+	//mix down the result into the output buffer
+	m1c_helper_add_two_dsp_buffers( output, &temp_buf_2, output );
 	
 
 	//now at the end we need to mix the input and output accordingly.
@@ -236,7 +259,6 @@ void ct5_fx_m1c( hope_dsp_buffer_struct * input, hope_dsp_buffer_struct * output
 	dry_gain = m1c_global_variables->dry_gain;
 
 	m1c_helper_wet_dry_mix( input, dry_gain, output, wet_gain, output );
-
 
 	
 }
@@ -434,13 +456,33 @@ state_function_pointer_t m1c_state_overdub_to_change_n( hope_dsp_buffer_struct *
 state_function_pointer_t m1c_state_change_n( hope_dsp_buffer_struct * input, hope_dsp_buffer_struct * output )
 {
 
-	//feedback has to be zero.
+	//if we get here it means n switch has changed. So we need to decide which links to fade in or out based on n. 
 
-	//change feedback pointer
+	//we can use link n processing to know which link called this state/
 
-	// run the algo
-	m1c_helper_ct5_algo( bufs[m1c_link_n_processing], input, output );
+	//however i think we need to also know the previous value of n to know what is happening. 
 
+
+	//first link, its always on so no change.
+
+	if( m1c_link_n_processing == 0 )
+	{
+		m1c_helper_ct5_algo( bufs[m1c_link_n_processing], input, output );
+	}
+	else if( m1c_link_n_processing == 1 )
+	{
+		// m1c_n_switch can be 0 1 2.
+		//if we are going from 2 links to 3 ( n = 1 to n = 2 ) 
+		if( ( bufs[m1c_link_n_processing]->m1c_variables->n_switch >= 1) && ( bufs[m1c_link_n_processing]->m1c_variables->last_n_switch >= 1 ) )
+		{
+					m1c_helper_ct5_algo( bufs[m1c_link_n_processing], input, output );
+		}
+		else if( )
+	}
+	else if( m1c_link_n_processing == 2 )
+	{
+
+	}
 	// then return to overdub
 	state_function_pointer_t sfp;
 	sfp.next_state = m1c_state_change_n_to_overdub;
