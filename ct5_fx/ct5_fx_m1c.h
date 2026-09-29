@@ -6,9 +6,9 @@
 void ct5_fx_m1c( hope_dsp_buffer_struct * input, hope_dsp_buffer_struct * output );
 
 typedef struct{
-	uint32_t n_switch;
-	uint32_t last_n_switch;
-	float wet_gain;
+	uint32_t current_n;
+	uint32_t desired_n;
+	float wet_gain;	
 	float dry_gain;
 	float desired_dir;
 	uint32_t current_buffer_size;  //in samples
@@ -19,6 +19,12 @@ typedef struct{
 	uint32_t use_feedback_volume_override;
 	float current_write_head_volume;
 	float desired_write_head_volume;
+	float current_output_volume;
+	float desired_output_volume;
+
+	uint32_t hold_mode;
+
+        
 }m1c_variables_t;
 
 #endif

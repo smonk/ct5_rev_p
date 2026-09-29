@@ -2,7 +2,7 @@
 #include "ct5_fx_m2r.h"
 #include "ct5_fx_q_tables.h"
 #include "hope_version.h"
-
+#include "ct5_buffer.h"
 #include "hope_btn_and_sw.h"
 #include "hope_pot_and_cvin.h"
 
@@ -32,9 +32,22 @@ float stash_pot_array[3][ HOPE_NUM_POTS_AND_CVIN ] = {0};
 //1 means use stashed, 0 means use live
 uint8_t stashed_or_live_array[3][ HOPE_NUM_POTS_AND_CVIN ] = {0};
 
+
+uint32_t interpret_buffer_size( float );
+float interpret_feedback_volume( float );
+
 void ct5_fx_get_m1c_variables(m1c_variables_t *m1c_variables)
 {
-	
+	m1c_variables->desired_n = interpret_n_switch() - 1;
+
+	m1c_variables->wet_gain = interpret_mix_pot_wet_gain( my_pot_and_cvin[ 3 ].normalized_value );
+	m1c_variables->dry_gain = interpret_mix_pot_dry_gain( my_pot_and_cvin[ 3 ].normalized_value );
+	m1c_variables->desired_dir = interpret_desired_dir( my_pot_and_cvin[ 2 ].normalized_value );
+
+	m1c_variables->desired_buffer_size = interpret_buffer_size( my_pot_and_cvin[ 1 ].normalized_value );
+
+	m1c_variables->desired_feedback_volume = interpret_feedback_volume( my_pot_and_cvin[ 0 ].normalized_value );
+
 }
 
 void ct5_fx_get_m2r_variables(m2r_variables_t *m2r_variables)
@@ -283,4 +296,46 @@ float interpret_playback_volume( float val )
 float interpret_overdub_decay( float val )
 {
 	return val; //my_pot_and_cvin[ 0 ].normalized_value;	
+}
+
+uint32_t interpret_buffer_size( float val )
+{
+
+	//if we use 8 buffer sizes we should get
+	// 8, 4, 2, 1, .5, .25, .125, .0625 seconds. 
+	// we need to know what is the max buffer size.
+
+	uint32_t max_size = CT5_BUFFER_MEM_SIZE_WORDS/6;
+
+	//make val ( a float with range 0 to 1 ) into an unsigned integer range 0 to 7
+	val *= 7.99;
+
+	uint32_t temp = (uint32_t)val;
+	switch(temp)
+	{
+		case 0:
+			return max_size/128; 
+		case 1:
+			return max_size/64;
+		case 2:
+			return max_size/32;
+		case 3:
+			return max_size/16;
+		case 4:
+			return max_size/8;
+		case 5:
+			return max_size/4;
+		case 6:
+			return max_size/2;
+		case 7:
+			return max_size;
+		default:
+				return max_size;
+	}
+
+}
+
+float interpret_feedback_volume( float val )
+{
+	return val; 
 }
