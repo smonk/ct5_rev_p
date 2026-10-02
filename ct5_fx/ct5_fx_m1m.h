@@ -21,6 +21,7 @@ typedef struct{
 
     uint32_t hold_mode;
 	
+    float current_dir[CT5_M1M_N_READ_HEADS];
     float desired_dir[CT5_M1M_N_READ_HEADS];
 	
     float current_feedback_volume[CT5_M1M_N_READ_HEADS]; //what was the feedback volume when you leave the algo

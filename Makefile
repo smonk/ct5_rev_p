@@ -106,6 +106,7 @@ my_fx/my_fx_pass_through.c \
 libmidi/midi.c \
 ct5_fx/ct5_fx_ct5.c \
 ct5_fx/ct5_fx_m1c.c \
+ct5_fx/ct5_fx_m1m.c \
 ct5_fx/ct5_fx_m2r.c \
 ct5_fx/ct5_fx_m3t.c \
 ct5_fx/ct5_fx_q_tables.c \

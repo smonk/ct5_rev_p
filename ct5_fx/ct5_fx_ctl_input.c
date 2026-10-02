@@ -50,6 +50,23 @@ void ct5_fx_get_m1c_variables(m1c_variables_t *m1c_variables)
 
 }
 
+void ct5_fx_get_m1m_variables(m1m_variables_t *m1m_variables)
+{
+	m1m_variables->desired_n = interpret_n_switch() -1;
+
+	m1m_variables->wet_gain = interpret_mix_pot_wet_gain( my_pot_and_cvin[ 3 ].normalized_value );
+	m1m_variables->dry_gain = interpret_mix_pot_dry_gain( my_pot_and_cvin[ 3 ].normalized_value );
+	m1m_variables->desired_dir[ m1m_variables->desired_n ] = interpret_desired_dir( my_pot_and_cvin[ 2 ].normalized_value );
+
+	m1m_variables->desired_buffer_size = interpret_buffer_size( my_pot_and_cvin[ 1 ].normalized_value );
+
+	// m1m_variables->desired_feedback_volume[ m1m_variables->desired_n ] = interpret_feedback_volume( my_pot_and_cvin[ 0 ].normalized_value );
+	m1m_variables->desired_feedback_volume[ 0 ] = interpret_feedback_volume( my_pot_and_cvin[ 0 ].normalized_value );
+	m1m_variables->desired_feedback_volume[ 1 ] = interpret_feedback_volume( my_pot_and_cvin[ 0 ].normalized_value );
+	m1m_variables->desired_feedback_volume[ 2 ] = interpret_feedback_volume( my_pot_and_cvin[ 0 ].normalized_value );
+
+}
+
 void ct5_fx_get_m2r_variables(m2r_variables_t *m2r_variables)
 {
 

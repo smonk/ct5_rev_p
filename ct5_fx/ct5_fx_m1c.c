@@ -486,9 +486,9 @@ state_function_pointer_t m1c_state_overdub_to_change_n( hope_dsp_buffer_struct *
 	// m1c_helper_ct5_algo( bufs[m1c_link_n_processing], input, output );
 
 	// // then return to overdub
-	// state_function_pointer_t sfp;
+	state_function_pointer_t sfp;
 	// sfp.next_state = m1c_state_change_n;
-	// return sfp;
+	return sfp;
 
 }
 

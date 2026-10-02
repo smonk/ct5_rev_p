@@ -23,19 +23,15 @@
 //https://www.asciiart.eu/text-to-ascii-art
 //used 'ansi shadow' font
 
-#define M1_CT5_LINKS 3
+#define M1M_N_BUFFERS 1
 
-static ct5_buffer_t * bufs[M1_CT5_LINKS];
+static ct5_buffer_t * bufs[M1M_N_BUFFERS];
  
 static ct5_buffer_t ct5_buffer_a;
 
-
-
 static m1m_variables_t m1m_variables_a;
 
-static m1m_variables_t m1m_variables_global;
-
-static m1m_variables_t * m1m_global_variables;
+// static m1m_variables_t m1m_variables_global;
 
 void ct5_fx_m1m_init( void );
 
@@ -85,14 +81,14 @@ void m1m_helper_add_two_dsp_buffers( hope_dsp_buffer_struct * input_1, hope_dsp_
 void m1m_helper_ct5_algo( ct5_buffer_t * buf, hope_dsp_buffer_struct * input, hope_dsp_buffer_struct * output );
 
 
-state_function_pointer_t link_0_sfp = {0};
-state_function_pointer_t link_1_sfp = {0};
-state_function_pointer_t link_2_sfp = {0};
+static state_function_pointer_t link_0_sfp = {0};
+// state_function_pointer_t link_1_sfp = {0};
+// state_function_pointer_t link_2_sfp = {0};
 
 static uint32_t m1m_link_n_processing = 0;
-static uint32_t m1m_link_n_highlighted = 0;
+// static uint32_t m1m_link_n_highlighted = 0;
 
-static uint32_t m1m_link_n_change_lock = 0;
+// static uint32_t m1m_link_n_change_lock = 0;
 
 
 
@@ -110,11 +106,11 @@ void ct5_fx_m1m_init( void )
 
 	bufs[0]->m1m_variables = &m1m_variables_a;
 
-	m1m_global_variables = &m1m_variables_global;
+	// m1m_global_variables = &m1m_variables_global;
 
 	uint32_t channel_buffer_size = CT5_BUFFER_MEM_SIZE_WORDS / 2;
 
-	for( int32_t i = 0; i < M1_CT5_LINKS; i++ )
+	for( int32_t i = 0; i < M1M_N_BUFFERS; i++ )
 	{
 		bufs[i]->this_buffers_index = i;
 
@@ -134,9 +130,10 @@ void ct5_fx_m1m_init( void )
 
 		bufs[i]->integer_write_head_address = 0;
 
-		bufs[i]->desired_dir = 0;
-		bufs[i]->current_dir = 0;
-		bufs[i]->dir_increment = 0.0005;
+        bufs[i]->dir_increment = 0.0005;
+		// bufs[i]->desired_dir = 0;
+		// bufs[i]->current_dir = 0;
+		// bufs[i]->dir_increment = 0.0005;
 
 		//these aren't really needed for m1m
 		// bufs[i]->playback_start = 0;
@@ -147,31 +144,55 @@ void ct5_fx_m1m_init( void )
 		// bufs[i]->current_playback_volume = 1.0;
 		// bufs[i]->playback_volume_increment = 0.0005;		
 
-		bufs[i]->m1m_variables->current_n = 0;
-		bufs[i]->m1m_variables->desired_n = 0;
-	
-		bufs[i]->m1m_variables->dry_gain = 1;
-		bufs[i]->m1m_variables->wet_gain = 1;
-		bufs[i]->m1m_variables->desired_dir = 1;
+        bufs[i]->m1m_variables->current_n = 0;
+        bufs[i]->m1m_variables->desired_n = 0;
+    
+        bufs[i]->m1m_variables->dry_gain = 1;
+        bufs[i]->m1m_variables->wet_gain = 1;
 
-		bufs[i]->m1m_variables->current_buffer_size = channel_buffer_size/16;
-		bufs[i]->m1m_variables->desired_buffer_size = channel_buffer_size/16;
+        bufs[i]->m1m_variables->current_buffer_size = channel_buffer_size/16;
+        bufs[i]->m1m_variables->desired_buffer_size = channel_buffer_size/16;
 
-		bufs[i]->m1m_variables->current_feedback_volume = 0.5;
-		bufs[i]->m1m_variables->desired_feedback_volume = 0.5;
-		bufs[i]->m1m_variables->desired_feedback_volume_override = 0;
-		bufs[i]->m1m_variables->use_feedback_volume_override = 0;
+        bufs[i]->m1m_variables->current_write_head_volume = 0;
+        bufs[i]->m1m_variables->desired_write_head_volume = 0;
 
-		bufs[i]->m1m_variables->current_write_head_volume = 1.0;
-		bufs[i]->m1m_variables->desired_write_head_volume = 1.0;
+        bufs[i]->m1m_variables->hold_mode = 0;
 
-		bufs[i]->m1m_variables->current_output_volume = 1.0;
-		bufs[i]->m1m_variables->desired_output_volume = 1.0;
+        for( uint32_t j = 0; j < CT5_M1M_N_READ_HEADS; j++ )
+        {
+            bufs[i]->m1m_variables->current_dir[j] = 1;
+            bufs[i]->m1m_variables->desired_dir[j] = 1;
 
+
+            bufs[i]->m1m_variables->current_feedback_volume[j] = 0.0;
+            bufs[i]->m1m_variables->desired_feedback_volume[j] = 0.0;
+            bufs[i]->m1m_variables->desired_feedback_volume_override[j] = 0.0;
+            bufs[i]->m1m_variables->use_feedback_volume_override[j] = 0;
+
+            bufs[i]->m1m_variables->current_output_volume[j] = 0.0;
+            bufs[i]->m1m_variables->desired_output_volume[j] = 0.0;
+
+            switch(j)
+            {
+                case 0:
+                    bufs[i]->m1m_variables->float_read_head_address[j] = (float)( bufs[i]->m1m_variables->current_buffer_size ) / 6.0;
+                    break;
+                case 1:
+                    bufs[i]->m1m_variables->float_read_head_address[j] = 3.0 * (float)( bufs[i]->m1m_variables->current_buffer_size ) / 6.0;
+                    break;
+                case 2:
+                    bufs[i]->m1m_variables->float_read_head_address[j] = 5.0 * (float)( bufs[i]->m1m_variables->current_buffer_size ) / 6.0;
+                    break;
+                default:
+                    break;
+
+            }
+
+        }
 	}
 	link_0_sfp.next_state = m1m_state_reset;
-	link_1_sfp.next_state = m1m_state_reset;
-	link_2_sfp.next_state = m1m_state_reset;
+	// link_1_sfp.next_state = m1m_state_reset;
+	// link_2_sfp.next_state = m1m_state_reset;
 }
 
 // ███╗   ███╗ █████╗ ██╗███╗   ██╗
@@ -194,21 +215,8 @@ void ct5_fx_m1m( hope_dsp_buffer_struct * input, hope_dsp_buffer_struct * output
 		return;
 	}
 
-	//the non link associated variable struct, mostly used for mix and n switch
-	//but the n switch should not be handled here.
-
-	ct5_fx_get_m1m_variables( m1m_global_variables );
-
-	// m1m_link_n_change_lock = 0;
-
-	// if( m1m_link_n_change_lock == 0 )
-	// {
-	// 	m1m_link_n_highlighted = my_m1m_variables->m1m_n_switch - 1;	
-	// }
-	
 	//zero the output buffer
 	m1m_helper_zero_buffer( output );
-
 	
 	hope_dsp_buffer_struct temp_buf_0;
 	temp_buf_0.num_samples_per_channel = HOPE_DSP_BUFFER_SIZE;
@@ -217,29 +225,17 @@ void ct5_fx_m1m( hope_dsp_buffer_struct * input, hope_dsp_buffer_struct * output
 	temp_buf_0.left_channel_buffer = temp_0_left_channel_buffer;
 	temp_buf_0.right_channel_buffer = temp_0_right_channel_buffer;
 
-	//do the above but for a temp_buf_1
-	hope_dsp_buffer_struct temp_buf_1;
-	temp_buf_1.num_samples_per_channel = HOPE_DSP_BUFFER_SIZE;
-	float temp_1_left_channel_buffer[HOPE_DSP_BUFFER_SIZE];
-	float temp_1_right_channel_buffer[HOPE_DSP_BUFFER_SIZE];
-	temp_buf_1.left_channel_buffer = temp_1_left_channel_buffer;
-	temp_buf_1.right_channel_buffer = temp_1_right_channel_buffer;
-	
-	//do the same but for a temp_buf_2
-	hope_dsp_buffer_struct temp_buf_2;
-	temp_buf_2.num_samples_per_channel = HOPE_DSP_BUFFER_SIZE;
-	float temp_2_left_channel_buffer[HOPE_DSP_BUFFER_SIZE];
-	float temp_2_right_channel_buffer[HOPE_DSP_BUFFER_SIZE];
-	temp_buf_2.left_channel_buffer = temp_2_left_channel_buffer;
-	temp_buf_2.right_channel_buffer = temp_2_right_channel_buffer;
+    //this is always zero 
+    m1m_link_n_processing = 0;
 
-	//temp_buf_0 will be the output of the link 0
+    //temp_buf_0 will be the output of the link 0
 	m1m_helper_zero_buffer( &temp_buf_0 );
-	m1m_link_n_processing = 0;
-	if( m1m_global_variables->desired_n == 0 )
-	{
+
+    //this will need to change
+    // if( bufs[0]->m1m_variables->desired_n == 0 )
+	// {
 		ct5_fx_get_m1m_variables( bufs[0]->m1m_variables );
-	}
+	// }
 	
 	//sfp means state function pointer
 	link_0_sfp = link_0_sfp.next_state( input, &temp_buf_0 );
@@ -247,33 +243,10 @@ void ct5_fx_m1m( hope_dsp_buffer_struct * input, hope_dsp_buffer_struct * output
 	m1m_helper_add_two_dsp_buffers( output, &temp_buf_0, output );
 
 
-	m1m_helper_zero_buffer( &temp_buf_1 );
-	m1m_link_n_processing = 1;
-	if( m1m_global_variables->desired_n == 1 )
-	{
-		ct5_fx_get_m1m_variables( bufs[1]->m1m_variables );
-	}
-	//the input is now temp_buf_0
-	link_1_sfp = link_1_sfp.next_state( &temp_buf_0, &temp_buf_1 );
-	//mix down the result into the output buffer
-	m1m_helper_add_two_dsp_buffers( output, &temp_buf_1, output );
-	
-
-	m1m_helper_zero_buffer( &temp_buf_2 );
-	m1m_link_n_processing = 2;
-	if( m1m_global_variables->desired_n == 2 )
-	{
-		ct5_fx_get_m1m_variables( bufs[2]->m1m_variables );
-	}
-	link_2_sfp = link_2_sfp.next_state( &temp_buf_1, &temp_buf_2 );
-	//mix down the result into the output buffer
-	m1m_helper_add_two_dsp_buffers( output, &temp_buf_2, output );
-	
-
 	//now at the end we need to mix the input and output accordingly.
 	float wet_gain, dry_gain;
-	wet_gain = m1m_global_variables->wet_gain;
-	dry_gain = m1m_global_variables->dry_gain;
+	wet_gain = bufs[0]->m1m_variables->wet_gain;
+	dry_gain = bufs[0]->m1m_variables->dry_gain;
 
 	m1m_helper_wet_dry_mix( input, dry_gain, output, wet_gain, output );
 
@@ -346,15 +319,28 @@ state_function_pointer_t m1m_state_reset_to_overdub( hope_dsp_buffer_struct * in
 {
 
 	//write and read head spacing should be done here
-	bufs[m1m_link_n_processing]->integer_write_head_address = 0;
-	bufs[m1m_link_n_processing]->float_read_head_address = bufs[m1m_link_n_processing]->m1m_variables->current_buffer_size / 2;
+    bufs[m1m_link_n_processing]->integer_write_head_address = 0;
+    for( uint32_t j = 0; j < CT5_M1M_N_READ_HEADS; j++ )
+    {
+        bufs[m1m_link_n_processing]->m1m_variables->float_read_head_address[j] = 
+        (j*2.0 + 1.0) * (float)( bufs[m1m_link_n_processing]->m1m_variables->current_buffer_size ) / 6.0;
+    }
 
 	//prepare for fades
 	bufs[m1m_link_n_processing]->m1m_variables->current_write_head_volume = 0.0f;
 	bufs[m1m_link_n_processing]->m1m_variables->desired_write_head_volume = 1.0f;
 
-	bufs[m1m_link_n_processing]->m1m_variables->current_feedback_volume = 0.0f;
-	bufs[m1m_link_n_processing]->m1m_variables->use_feedback_volume_override = 0;	
+    for( uint32_t j = 0; j < CT5_M1M_N_READ_HEADS + 1; j++ )
+    {
+        bufs[m1m_link_n_processing]->m1m_variables->current_feedback_volume[j] = 0.0f;
+        bufs[m1m_link_n_processing]->m1m_variables->use_feedback_volume_override[j] = 0;	
+    }
+
+    for( uint32_t j = 0; j < ( bufs[m1m_link_n_processing]->m1m_variables->current_n + 1 ) ; j++ )
+    {
+        bufs[m1m_link_n_processing]->m1m_variables->desired_output_volume[j] = 1.0f;
+    }
+    //turn on the appropriate amount of heads
 
 	m1m_helper_ct5_algo( bufs[m1m_link_n_processing], input, output );
 
@@ -404,8 +390,11 @@ state_function_pointer_t m1m_state_overdub_to_holding( hope_dsp_buffer_struct * 
 	bufs[m1m_link_n_processing]->m1m_variables->desired_write_head_volume = 0.0f;
 
 	// somehow we need to set the goal feedback to 0.
-	bufs[m1m_link_n_processing]->m1m_variables->desired_feedback_volume_override = 0.0f;
-	bufs[m1m_link_n_processing]->m1m_variables->use_feedback_volume_override = 1;	
+    for( uint32_t j = 0; j < CT5_M1M_N_READ_HEADS; j++ )
+    {
+        bufs[m1m_link_n_processing]->m1m_variables->current_feedback_volume[j] = 0.0f;
+        bufs[m1m_link_n_processing]->m1m_variables->use_feedback_volume_override[j] = 1;	
+    }
 
 	bufs[m1m_link_n_processing]->m1m_variables->hold_mode = 1;	
 
@@ -449,10 +438,12 @@ state_function_pointer_t m1m_state_holding_to_overdub( hope_dsp_buffer_struct * 
 
 	// fade back in the write head volume
 	bufs[m1m_link_n_processing]->m1m_variables->desired_write_head_volume = 1.0f;
-
 	// somehow deal with feedback value
-	bufs[m1m_link_n_processing]->m1m_variables->use_feedback_volume_override = 0;
-
+    
+	for( uint32_t j = 0; j < CT5_M1M_N_READ_HEADS; j++ )
+    {
+        bufs[m1m_link_n_processing]->m1m_variables->use_feedback_volume_override[j] = 0;	
+    }
 
 
 	// then run the algo
@@ -494,59 +485,53 @@ state_function_pointer_t m1m_state_change_n( hope_dsp_buffer_struct * input, hop
 
 	//however i think we need to also know the previous value of n to know what is happening. 
 
+    //first head is always on.
 
-	//first link, its always on so no change.
+    //second head is on/off depending on n
+    if( bufs[m1m_link_n_processing]->m1m_variables->current_n == 0 && bufs[m1m_link_n_processing]->m1m_variables->desired_n > 0 )
+    {
+        //fade in link 1
+        // bufs[m1m_link_n_processing]->m1m_variables->desired_write_head_volume = 1.0f;
+        bufs[m1m_link_n_processing]->m1m_variables->desired_output_volume[1] = 1.0f;
+    }
+    //else fade out if last n >0 and this n == 0
+    else if( bufs[m1m_link_n_processing]->m1m_variables->current_n > 0 && bufs[m1m_link_n_processing]->m1m_variables->desired_n == 0 )
+    {
+        //fade out link 1
+        // bufs[m1m_link_n_processing]->m1m_variables->desired_write_head_volume = 0.0f;
+        bufs[m1m_link_n_processing]->m1m_variables->desired_output_volume[1] = 0.0f;
+    }
+    //else no fade needed
+    else
+    {
 
-	if( m1m_link_n_processing == 0 )
-	{
-		m1m_helper_ct5_algo( bufs[m1m_link_n_processing], input, output );
-	}
-	else if( m1m_link_n_processing == 1 )
-	{
-		//fade in if last n == 0 and this n > 0
-		if( bufs[1]->m1m_variables->current_n == 0 && bufs[1]->m1m_variables->desired_n > 0 )
-		{
-			//fade in link 1
-			bufs[1]->m1m_variables->desired_write_head_volume = 1.0f;
-			bufs[1]->m1m_variables->desired_output_volume = 1.0f;
-		}
-		//else fade out if last n >0 and this n == 0
-		else if( bufs[1]->m1m_variables->current_n > 0 && bufs[1]->m1m_variables->desired_n == 0 )
-		{
-			//fade out link 1
-			bufs[1]->m1m_variables->desired_write_head_volume = 0.0f;
-			bufs[1]->m1m_variables->desired_output_volume = 0.0f;
-		}
-		//else no fade needed
-		else
-		{
+    }
 
-		}
-		m1m_helper_ct5_algo( bufs[1], input, output );
-	}
-	else if( m1m_link_n_processing == 2 )
-	{
-		//fade in  if last n < 2 and this n > 1
-		if( bufs[2]->m1m_variables->current_n < 2 && bufs[2]->m1m_variables->desired_n > 1 )
-		{
-			//fade in link 2
-			bufs[2]->m1m_variables->desired_write_head_volume = 1.0f;
-			bufs[2]->m1m_variables->desired_output_volume = 1.0f;
-		}
-		//else fade out if last n > 1 and this n < 2
-		else if( bufs[2]->m1m_variables->current_n > 1 && bufs[2]->m1m_variables->desired_n < 2 )
-		{
-			//fade out link 2
-			bufs[2]->m1m_variables->desired_write_head_volume = 0.0f;
-			bufs[2]->m1m_variables->desired_output_volume = 0.0f;
-		}
-		//else no fade needed
-		else
-		{
+    //third head is on/off depending on n
+    //fade in  if last n < 2 and this n > 1
+    if( bufs[m1m_link_n_processing]->m1m_variables->current_n < 2 && bufs[m1m_link_n_processing]->m1m_variables->desired_n > 1 )
+    {
+        //fade in link 2
+        // bufs[m1m_link_n_processing]->m1m_variables->desired_write_head_volume = 1.0f;
+        bufs[m1m_link_n_processing]->m1m_variables->desired_output_volume[2] = 1.0f;
+    }
+    //else fade out if last n > 1 and this n < 2
+    else if( bufs[m1m_link_n_processing]->m1m_variables->current_n > 1 && bufs[m1m_link_n_processing]->m1m_variables->desired_n < 2 )
+    {
+        //fade out link 2
+        // bufs[m1m_link_n_processing]->m1m_variables->desired_write_head_volume = 0.0f;
+        bufs[m1m_link_n_processing]->m1m_variables->desired_output_volume[2] = 0.0f;
+    }
+    //else no fade needed
+    else
+    {
 
-		}
-		m1m_helper_ct5_algo( bufs[2], input, output );
-	}
+    }
+
+    bufs[m1m_link_n_processing]->m1m_variables->current_n = bufs[m1m_link_n_processing]->m1m_variables->desired_n;
+
+    m1m_helper_ct5_algo( bufs[m1m_link_n_processing], input, output );
+
 	// then return to overdub
 	state_function_pointer_t sfp;
 	sfp.next_state = m1m_state_change_n_to_overdub;
@@ -556,7 +541,10 @@ state_function_pointer_t m1m_state_change_n( hope_dsp_buffer_struct * input, hop
 state_function_pointer_t m1m_state_change_n_to_overdub( hope_dsp_buffer_struct * input, hope_dsp_buffer_struct * output )
 {
 	// bring back feedback to pot level
-	bufs[m1m_link_n_processing]->m1m_variables->use_feedback_volume_override = 0;
+    for( uint32_t j = 0; j < CT5_M1M_N_READ_HEADS; j++ )
+    {
+        bufs[m1m_link_n_processing]->m1m_variables->use_feedback_volume_override[j] = 0;	
+    }
 
 	// run the algo
 	m1m_helper_ct5_algo( bufs[m1m_link_n_processing], input, output );
@@ -720,85 +708,93 @@ void m1m_helper_ct5_algo( ct5_buffer_t * buf, hope_dsp_buffer_struct * input, ho
 
 	// static float temp_dir = 1.0;
 	//next calculate the read address vector using dir
-	buf->desired_dir = buf->m1m_variables->desired_dir; 
-	float read_head_address_vector[ HOPE_DSP_BUFFER_SIZE ];
-	for(uint32_t i = 0; i < HOPE_DSP_BUFFER_SIZE; i++)
-	{
-		if( fabs(buf->desired_dir - buf->current_dir) > buf->dir_increment )
-		{
-			if(buf->desired_dir - buf->current_dir > 0)
-			{
-				buf->current_dir = buf->current_dir + buf->dir_increment;
-			}
-			else
-			{
-				buf->current_dir = buf->current_dir - buf->dir_increment;
-			}
-		}
-		else
-		{
-			buf->current_dir = buf->desired_dir;
-		}
-		
-		buf->float_read_head_address += buf->current_dir;
+	// buf->desired_dir = buf->m1m_variables->desired_dir; 
+	float read_head_address_vector[ CT5_M1M_N_READ_HEADS ][ HOPE_DSP_BUFFER_SIZE ];
+    for(uint32_t j = 0;  j < CT5_M1M_N_READ_HEADS; j++)
+    {
+        for(uint32_t i = 0; i < HOPE_DSP_BUFFER_SIZE; i++)
+        {
+            if( fabs(buf->m1m_variables->desired_dir[j] - buf->m1m_variables->current_dir[j]) > buf->dir_increment )
+            {
+                if(buf->m1m_variables->desired_dir[j] - buf->m1m_variables->current_dir[j] > 0)
+                {
+                    buf->m1m_variables->current_dir[j] = buf->m1m_variables->current_dir[j] + buf->dir_increment;
+                }
+                else
+                {
+                    buf->m1m_variables->current_dir[j] = buf->m1m_variables->current_dir[j] - buf->dir_increment;
+                }
+            }
+            else
+            {
+                buf->m1m_variables->current_dir[j] = buf->m1m_variables->desired_dir[j];
+            }
+            
+            buf->m1m_variables->float_read_head_address[j] += buf->m1m_variables->current_dir[j];
 
-		if( buf->float_read_head_address > buf->m1m_variables->current_buffer_size )
-		{
-			buf->float_read_head_address = buf->float_read_head_address - buf->m1m_variables->current_buffer_size;
-		}
+            if( buf->m1m_variables->float_read_head_address[j] > buf->m1m_variables->current_buffer_size )
+            {
+                buf->m1m_variables->float_read_head_address[j] = buf->m1m_variables->float_read_head_address[j] - buf->m1m_variables->current_buffer_size;
+            }
 
-		if( buf->float_read_head_address < 0 )
-		{
-			buf->float_read_head_address = buf->float_read_head_address + buf->m1m_variables->current_buffer_size;
-		}
+            if( buf->m1m_variables->float_read_head_address[j] < 0 )
+            {
+                buf->m1m_variables->float_read_head_address[j] = buf->m1m_variables->float_read_head_address[j] + buf->m1m_variables->current_buffer_size;
+            }
 
-		read_head_address_vector[i] = buf->float_read_head_address;
-	}
+            read_head_address_vector[j][i] = buf->m1m_variables->float_read_head_address[j];
+        }
+
+    }
 
 
 	//next calculate the read head volume based on collision detection	
 	float collision_zone_size = 100.0;
 	float dead_zone_distance = 5.0;
-	float read_head_volume_vector[ HOPE_DSP_BUFFER_SIZE ];
+	float read_head_volume_vector[ CT5_M1M_N_READ_HEADS ][ HOPE_DSP_BUFFER_SIZE ];
 
-	if( buf->m1m_variables->hold_mode == 0 )
-	{
-		for(uint32_t i = 0; i < HOPE_DSP_BUFFER_SIZE; i++)
-		{
-			float address_difference = fabs(read_head_address_vector[i] - (float)write_head_address_vector[i]);
-			if( address_difference < dead_zone_distance )
-			{
-				read_head_volume_vector[i] = 0.0;
-			}
-			else if(  address_difference  < collision_zone_size )
-			{
-				// read_head_volume_vector[i] = address_difference/collision_zone_size;
-				read_head_volume_vector[i] = (address_difference - dead_zone_distance) / (collision_zone_size - dead_zone_distance);
+    for(uint32_t j = 0;  j < CT5_M1M_N_READ_HEADS; j++)
+    {
+        if( buf->m1m_variables->hold_mode == 0 )
+        {
+            for(uint32_t i = 0; i < HOPE_DSP_BUFFER_SIZE; i++)
+            {
+                float address_difference = fabs(read_head_address_vector[j][i] - (float)write_head_address_vector[i]);
+                if( address_difference < dead_zone_distance )
+                {
+                    read_head_volume_vector[j][i] = 0.0;
+                }
+                else if(  address_difference  < collision_zone_size )
+                {
+                    // read_head_volume_vector[i] = address_difference/collision_zone_size;
+                    read_head_volume_vector[j][i] = (address_difference - dead_zone_distance) / (collision_zone_size - dead_zone_distance);
 
-			}
-			else if ( address_difference > buf->m1m_variables->current_buffer_size - dead_zone_distance )
-			{
-				read_head_volume_vector[i] = 0.0;
-			}
-			else if ( address_difference > buf->m1m_variables->current_buffer_size - collision_zone_size )
-			{
-				// read_head_volume_vector[i] = (buf->buffer_size - address_difference)/collision_zone_size;
-				read_head_volume_vector[i] = ( buf->m1m_variables->current_buffer_size - address_difference - dead_zone_distance )/(collision_zone_size - dead_zone_distance);
-			}
-			else
-			{
-				read_head_volume_vector[i] = 1.0;
-			}
+                }
+                else if ( address_difference > buf->m1m_variables->current_buffer_size - dead_zone_distance )
+                {
+                    read_head_volume_vector[j][i] = 0.0;
+                }
+                else if ( address_difference > buf->m1m_variables->current_buffer_size - collision_zone_size )
+                {
+                    // read_head_volume_vector[i] = (buf->buffer_size - address_difference)/collision_zone_size;
+                    read_head_volume_vector[j][i] = ( buf->m1m_variables->current_buffer_size - address_difference - dead_zone_distance )/(collision_zone_size - dead_zone_distance);
+                }
+                else
+                {
+                    read_head_volume_vector[j][i] = 1.0;
+                }
 
-		}
-	}
-	else
-	{
-		for(uint32_t i = 0; i < HOPE_DSP_BUFFER_SIZE; i++)
-		{
-			read_head_volume_vector[i] = 1.0;
-		}
-	}
+            }
+        }
+        else
+        {
+            for(uint32_t i = 0; i < HOPE_DSP_BUFFER_SIZE; i++)
+            {
+                read_head_volume_vector[j][i] = 1.0;
+            }
+        }
+
+    }
 
 	//calculate the write head volume vector
 	float write_head_volume_vector[ HOPE_DSP_BUFFER_SIZE ];
@@ -838,95 +834,148 @@ void m1m_helper_ct5_algo( ct5_buffer_t * buf, hope_dsp_buffer_struct * input, ho
 
 	//calculate the feedback volume vector
 	//TODO MAKE THIS READ FROM THE POT
-	float feedback_volume_vector[ HOPE_DSP_BUFFER_SIZE ];
-	float temp_desired_feedback_volume = buf->m1m_variables->desired_feedback_volume;
-	if( buf->m1m_variables->use_feedback_volume_override )
-	{
-		temp_desired_feedback_volume = buf->m1m_variables->desired_feedback_volume_override;
-	}
-	float temp_fb_increment = ( temp_desired_feedback_volume - buf->m1m_variables->current_feedback_volume )/HOPE_DSP_BUFFER_SIZE;
-	for(uint32_t i = 0; i < HOPE_DSP_BUFFER_SIZE; i++)
-	{
-		feedback_volume_vector[i] = buf->m1m_variables->current_feedback_volume + ((i + 1) * temp_fb_increment);
-		//clamp the value between 0 and 1
-		if( feedback_volume_vector[i] > 1.0 )
-		{
-			feedback_volume_vector[i] = 1.0;
-		}
-		else if( feedback_volume_vector[i] < 0.0 )
-		{
-			feedback_volume_vector[i] = 0.0;
-		}
-	}
-	buf->m1m_variables->current_feedback_volume = feedback_volume_vector[HOPE_DSP_BUFFER_SIZE - 1];
+	float feedback_volume_vector[ CT5_M1M_N_READ_HEADS ][ HOPE_DSP_BUFFER_SIZE ];
+	float temp_desired_feedback_volume[ CT5_M1M_N_READ_HEADS ];
+    for( uint32_t j = 0;  j < CT5_M1M_N_READ_HEADS; j++ )
+    {
+        temp_desired_feedback_volume[j] = buf->m1m_variables->desired_feedback_volume[j];
+        if( buf->m1m_variables->use_feedback_volume_override[j] )
+        {
+            temp_desired_feedback_volume[j] = buf->m1m_variables->desired_feedback_volume_override[j];
+        }
+    }
+
+	// if( buf->m1m_variables->use_feedback_volume_override )
+	// {
+	// 	temp_desired_feedback_volume = buf->m1m_variables->desired_feedback_volume_override;
+	// }
+	float temp_fb_increment[ CT5_M1M_N_READ_HEADS ];
+    for( uint32_t j = 0;  j < CT5_M1M_N_READ_HEADS; j++ )
+    {
+        temp_fb_increment[j] = ( temp_desired_feedback_volume[j] - buf->m1m_variables->current_feedback_volume[j] )/HOPE_DSP_BUFFER_SIZE;       
+    }
+
+    for( uint32_t j = 0;  j < CT5_M1M_N_READ_HEADS; j++ )
+    {
+        for( uint32_t i = 0; i < HOPE_DSP_BUFFER_SIZE; i++ )
+        {
+            feedback_volume_vector[j][i] = buf->m1m_variables->current_feedback_volume[j] + ((i + 1) * temp_fb_increment[j]);
+            //clamp the value between 0 and 1
+            if( feedback_volume_vector[j][i] > 1.0 )
+            {
+                feedback_volume_vector[j][i] = 1.0;
+            }
+            else if( feedback_volume_vector[j][i] < 0.0 )
+            {
+                feedback_volume_vector[j][i] = 0.0;
+            }
+        }
+        buf->m1m_variables->current_feedback_volume[j] = feedback_volume_vector[j][HOPE_DSP_BUFFER_SIZE - 1];
+
+    }
 
 	//now we need the actual audio signals
 	//use linear interpolation to assemble read data
-	float read_head_data_left[ HOPE_DSP_BUFFER_SIZE ];
-	float read_head_data_right[ HOPE_DSP_BUFFER_SIZE ];
+	float read_head_data_left[ CT5_M1M_N_READ_HEADS ][ HOPE_DSP_BUFFER_SIZE ];
+	float read_head_data_right[ CT5_M1M_N_READ_HEADS ][ HOPE_DSP_BUFFER_SIZE ];
+
+    float temp_feedback_sum_left = 0;
+    float temp_feedback_sum_right = 0;
 
 	float alpha, beta;
 	uint32_t low_address, high_address;
-	for(uint32_t i = 0; i < HOPE_DSP_BUFFER_SIZE; i++)
-	{
-		low_address = (uint32_t)read_head_address_vector[i];
-		high_address = (uint32_t)read_head_address_vector[i] + 1;
-		if( high_address >= buf->m1m_variables->current_buffer_size )
-		{
-			high_address = high_address - buf->m1m_variables->current_buffer_size;
-		}
+    for(uint32_t i = 0; i < HOPE_DSP_BUFFER_SIZE; i++)
+    {
+        temp_feedback_sum_left = 0;
+        temp_feedback_sum_right = 0;
 
-		alpha = read_head_address_vector[i] - low_address;
-		beta = 1.0 - alpha;
+        for( uint32_t j = 0;  j < CT5_M1M_N_READ_HEADS; j++ )
+        {
+            low_address = (uint32_t)read_head_address_vector[j][i];
+            high_address = (uint32_t)read_head_address_vector[j][i] + 1;
+            if( high_address >= buf->m1m_variables->current_buffer_size )
+            {
+                high_address = high_address - buf->m1m_variables->current_buffer_size;
+            }
 
-		read_head_data_left[i] = 
-				beta * (*(low_address + buf->left_channel_physical_memory_start_address)) 
-			+ 	alpha * (*((high_address + buf->left_channel_physical_memory_start_address))) ;
-	
-		read_head_data_left[i] *= read_head_volume_vector[i];
+            alpha = read_head_address_vector[j][i] - low_address;
+            beta = 1.0 - alpha;
 
+            read_head_data_left[j][i] = 
+                    beta * (*(low_address + buf->left_channel_physical_memory_start_address)) 
+                + 	alpha * (*((high_address + buf->left_channel_physical_memory_start_address))) ;
+        
+            read_head_data_left[j][i] *= read_head_volume_vector[j][i];
 
-		read_head_data_right[i] = 
-				beta * (*(low_address + buf->right_channel_physical_memory_start_address))
-			+ 	alpha * (*((high_address + buf->right_channel_physical_memory_start_address))) ;
+            temp_feedback_sum_left += read_head_data_left[j][i] * feedback_volume_vector[j][i];
 
-		read_head_data_right[i] *= read_head_volume_vector[i];
+            
+            read_head_data_right[j][i] = 
+            beta * (*(low_address + buf->right_channel_physical_memory_start_address))
+            + 	alpha * (*((high_address + buf->right_channel_physical_memory_start_address))) ;
+            
+            read_head_data_right[j][i] *= read_head_volume_vector[j][i];
+            
+            temp_feedback_sum_right += read_head_data_right[j][i] * feedback_volume_vector[j][i];
 
-		//now write
-		*((write_head_address_vector[i] + buf->left_channel_physical_memory_start_address)) = 
-			read_head_data_left[i] * feedback_volume_vector[i] 
-			+ input->left_channel_buffer[i] * write_head_volume_vector[i]
-			+ *((write_head_address_vector[i] + buf->left_channel_physical_memory_start_address)) * hold_volume_vector[i];
-			
+        }
+        //now write
+        *((write_head_address_vector[i] + buf->left_channel_physical_memory_start_address)) = 
+            temp_feedback_sum_left
+            + input->left_channel_buffer[i] * write_head_volume_vector[i]
+            + *((write_head_address_vector[i] + buf->left_channel_physical_memory_start_address)) * hold_volume_vector[i];
+            
 
-		*((write_head_address_vector[i] + buf->right_channel_physical_memory_start_address)) =
-			read_head_data_right[i] * feedback_volume_vector[i]
-			+ input->right_channel_buffer[i] * write_head_volume_vector[i]
-			+ *((write_head_address_vector[i] + buf->right_channel_physical_memory_start_address)) * hold_volume_vector[i];
-	}
+        *((write_head_address_vector[i] + buf->right_channel_physical_memory_start_address)) =
+            temp_feedback_sum_right
+            + input->right_channel_buffer[i] * write_head_volume_vector[i]
+            + *((write_head_address_vector[i] + buf->right_channel_physical_memory_start_address)) * hold_volume_vector[i];
+    
+
+    }
 
 	//prepare the output
-	float output_volume_vector[ HOPE_DSP_BUFFER_SIZE ];
-	float temp_op_increment = ( buf->m1m_variables->desired_output_volume - buf->m1m_variables->current_output_volume )/HOPE_DSP_BUFFER_SIZE;
-	for(uint32_t i = 0; i < HOPE_DSP_BUFFER_SIZE; i++)
-	{
-		output_volume_vector[i] = buf->m1m_variables->current_output_volume + ((i + 1) * temp_op_increment);
-		//clamp the value between 0 and 1
-		if( output_volume_vector[i] > 1.0 )
-		{
-			output_volume_vector[i] = 1.0;
-		}
-		else if( output_volume_vector[i] < 0.0 )
-		{
-			output_volume_vector[i] = 0.0;
-		}
-	}
-	buf->m1m_variables->current_output_volume = output_volume_vector[HOPE_DSP_BUFFER_SIZE - 1];
+	float output_volume_vector[ CT5_M1M_N_READ_HEADS ][ HOPE_DSP_BUFFER_SIZE ];
+	float temp_op_increment[ CT5_M1M_N_READ_HEADS ];
+    
+    for( uint32_t j = 0;  j < CT5_M1M_N_READ_HEADS; j++ ) 
+    {
+        temp_op_increment[j] = ( buf->m1m_variables->desired_output_volume[j] - buf->m1m_variables->current_output_volume[j] )/HOPE_DSP_BUFFER_SIZE;
+    }
+    
+    for( uint32_t j = 0;  j < CT5_M1M_N_READ_HEADS; j++ )
+    {
+        for(uint32_t i = 0; i < HOPE_DSP_BUFFER_SIZE; i++)
+        {
+            output_volume_vector[j][i] = 
+                buf->m1m_variables->current_output_volume[j] + ((i + 1) * temp_op_increment[j]);
+            //clamp the value between 0 and 1
+            if( output_volume_vector[j][i] > 1.0 )
+            {
+                output_volume_vector[j][i] = 1.0;
+            }
+            else if( output_volume_vector[j][i] < 0.0 )
+            {
+                output_volume_vector[j][i] = 0.0;
+            }
+        }
+        buf->m1m_variables->current_output_volume[j] = output_volume_vector[j][HOPE_DSP_BUFFER_SIZE - 1];
 
+    }
+
+    float temp_output_left = 0;
+    float temp_output_right = 0;
 	for( uint32_t i = 0; i < HOPE_DSP_BUFFER_SIZE; i++ )
 	{
-		output->left_channel_buffer[i] = output_volume_vector[i] * read_head_data_left[i];
-		output->right_channel_buffer[i] = output_volume_vector[i] * read_head_data_right[i];
+        temp_output_left = 0;
+        temp_output_right = 0;
+        for( uint32_t j = 0;  j < CT5_M1M_N_READ_HEADS; j++ )
+        {
+            temp_output_left += read_head_data_left[j][i] * output_volume_vector[j][i];
+            temp_output_right += read_head_data_right[j][i] * output_volume_vector[j][i];
+        }
+		output->left_channel_buffer[i] = temp_output_left;
+		output->right_channel_buffer[i] = temp_output_right;
 	}
 
 	//the end?

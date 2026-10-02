@@ -10,6 +10,7 @@
 //the valid address range should be
 //0x90000000 to 0x907fffff
 #include "ct5_fx_m1c.h"
+#include "ct5_fx_m1m.h"
 #include "ct5_fx_m2r.h"
 #include "ct5_fx_m3t.h"
 
@@ -72,6 +73,9 @@ typedef struct {
 
 	//a pointer to a m1c vars type
 	m1c_variables_t * m1c_variables;
+
+	//a pointer to m1m vars type
+	m1m_variables_t * m1m_variables;
 
 	//a pointer to a m2r vars type
 	m2r_variables_t * m2r_variables;
