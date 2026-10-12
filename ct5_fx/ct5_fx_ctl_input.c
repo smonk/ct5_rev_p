@@ -56,7 +56,14 @@ void ct5_fx_get_m1m_variables(m1m_variables_t *m1m_variables)
 
 	m1m_variables->wet_gain = interpret_mix_pot_wet_gain( my_pot_and_cvin[ 3 ].normalized_value );
 	m1m_variables->dry_gain = interpret_mix_pot_dry_gain( my_pot_and_cvin[ 3 ].normalized_value );
-	m1m_variables->desired_dir[ m1m_variables->desired_n ] = interpret_desired_dir( my_pot_and_cvin[ 2 ].normalized_value );
+	// m1m_variables->desired_dir[ m1m_variables->desired_n ] = interpret_desired_dir( my_pot_and_cvin[ 2 ].normalized_value );
+	// m1m_variables->desired_dir[ 0 ] = interpret_desired_dir( my_pot_and_cvin[ 2 ].normalized_value );
+	m1m_variables->desired_dir[ 0 ] = 1.03;
+	m1m_variables->desired_dir[ 1 ] = -1.03;
+	m1m_variables->desired_dir[ 2 ] = 1;
+	
+	// m1m_variables->desired_dir[ 1 ] = m1m_variables->desired_dir[ 0 ]*1.2;
+	// m1m_variables->desired_dir[ 2 ] = m1m_variables->desired_dir[ 0 ]*(-5/6);
 
 	m1m_variables->desired_buffer_size = interpret_buffer_size( my_pot_and_cvin[ 1 ].normalized_value );
 

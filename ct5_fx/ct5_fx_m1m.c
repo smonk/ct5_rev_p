@@ -493,6 +493,7 @@ state_function_pointer_t m1m_state_change_n( hope_dsp_buffer_struct * input, hop
         //fade in link 1
         // bufs[m1m_link_n_processing]->m1m_variables->desired_write_head_volume = 1.0f;
         bufs[m1m_link_n_processing]->m1m_variables->desired_output_volume[1] = 1.0f;
+        bufs[m1m_link_n_processing]->m1m_variables->use_feedback_volume_override[1] = 0;
     }
     //else fade out if last n >0 and this n == 0
     else if( bufs[m1m_link_n_processing]->m1m_variables->current_n > 0 && bufs[m1m_link_n_processing]->m1m_variables->desired_n == 0 )
@@ -500,6 +501,8 @@ state_function_pointer_t m1m_state_change_n( hope_dsp_buffer_struct * input, hop
         //fade out link 1
         // bufs[m1m_link_n_processing]->m1m_variables->desired_write_head_volume = 0.0f;
         bufs[m1m_link_n_processing]->m1m_variables->desired_output_volume[1] = 0.0f;
+        bufs[m1m_link_n_processing]->m1m_variables->use_feedback_volume_override[1] = 1;
+        bufs[m1m_link_n_processing]->m1m_variables->desired_feedback_volume_override[1] = 0.0f;
     }
     //else no fade needed
     else
@@ -514,6 +517,7 @@ state_function_pointer_t m1m_state_change_n( hope_dsp_buffer_struct * input, hop
         //fade in link 2
         // bufs[m1m_link_n_processing]->m1m_variables->desired_write_head_volume = 1.0f;
         bufs[m1m_link_n_processing]->m1m_variables->desired_output_volume[2] = 1.0f;
+        bufs[m1m_link_n_processing]->m1m_variables->use_feedback_volume_override[2] = 0;
     }
     //else fade out if last n > 1 and this n < 2
     else if( bufs[m1m_link_n_processing]->m1m_variables->current_n > 1 && bufs[m1m_link_n_processing]->m1m_variables->desired_n < 2 )
@@ -521,6 +525,8 @@ state_function_pointer_t m1m_state_change_n( hope_dsp_buffer_struct * input, hop
         //fade out link 2
         // bufs[m1m_link_n_processing]->m1m_variables->desired_write_head_volume = 0.0f;
         bufs[m1m_link_n_processing]->m1m_variables->desired_output_volume[2] = 0.0f;
+        bufs[m1m_link_n_processing]->m1m_variables->use_feedback_volume_override[2] = 1;
+        bufs[m1m_link_n_processing]->m1m_variables->desired_feedback_volume_override[2] = 0.0f;
     }
     //else no fade needed
     else
@@ -541,10 +547,10 @@ state_function_pointer_t m1m_state_change_n( hope_dsp_buffer_struct * input, hop
 state_function_pointer_t m1m_state_change_n_to_overdub( hope_dsp_buffer_struct * input, hope_dsp_buffer_struct * output )
 {
 	// bring back feedback to pot level
-    for( uint32_t j = 0; j < CT5_M1M_N_READ_HEADS; j++ )
-    {
-        bufs[m1m_link_n_processing]->m1m_variables->use_feedback_volume_override[j] = 0;	
-    }
+    // for( uint32_t j = 0; j < CT5_M1M_N_READ_HEADS; j++ )
+    // {
+    //     bufs[m1m_link_n_processing]->m1m_variables->use_feedback_volume_override[j] = 0;	
+    // }
 
 	// run the algo
 	m1m_helper_ct5_algo( bufs[m1m_link_n_processing], input, output );
@@ -881,8 +887,7 @@ void m1m_helper_ct5_algo( ct5_buffer_t * buf, hope_dsp_buffer_struct * input, ho
 
     float temp_feedback_sum_left = 0;
     float temp_feedback_sum_right = 0;
-
-	float alpha, beta;
+    float alpha, beta;
 	uint32_t low_address, high_address;
     for(uint32_t i = 0; i < HOPE_DSP_BUFFER_SIZE; i++)
     {
@@ -909,7 +914,6 @@ void m1m_helper_ct5_algo( ct5_buffer_t * buf, hope_dsp_buffer_struct * input, ho
 
             temp_feedback_sum_left += read_head_data_left[j][i] * feedback_volume_vector[j][i];
 
-            
             read_head_data_right[j][i] = 
             beta * (*(low_address + buf->right_channel_physical_memory_start_address))
             + 	alpha * (*((high_address + buf->right_channel_physical_memory_start_address))) ;
@@ -919,6 +923,15 @@ void m1m_helper_ct5_algo( ct5_buffer_t * buf, hope_dsp_buffer_struct * input, ho
             temp_feedback_sum_right += read_head_data_right[j][i] * feedback_volume_vector[j][i];
 
         }
+        //the compressor
+        temp_feedback_sum_left *= 0.33333334f;
+        float temp_cubed = temp_feedback_sum_left * temp_feedback_sum_left * temp_feedback_sum_left;
+        temp_feedback_sum_left = ( 1.5f * temp_feedback_sum_left ) - ( 0.5f * temp_cubed );
+	    
+        temp_feedback_sum_right *= 0.33333334f;
+        temp_cubed = temp_feedback_sum_right * temp_feedback_sum_right * temp_feedback_sum_right;
+        temp_feedback_sum_right = ( 1.5f * temp_feedback_sum_right ) - ( 0.5f * temp_cubed );
+        
         //now write
         *((write_head_address_vector[i] + buf->left_channel_physical_memory_start_address)) = 
             temp_feedback_sum_left
