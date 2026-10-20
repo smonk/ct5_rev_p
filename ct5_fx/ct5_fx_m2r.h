@@ -3,7 +3,7 @@
 
 #include "../hope_hal/hope_dsp_interface.h"
 
-void ct5_fx_m2r( hope_dsp_buffer_struct * input, hope_dsp_buffer_struct * output );
+void ct5_fx_m2r( hope_dsp_buffer_struct * input, hope_dsp_buffer_struct * output, hope_dsp_control_struct * ctl );
 
 //we need to make  a struct or typedef that holds all the variables that m2r uses. then we ask an
 //external function to initialize the struct.

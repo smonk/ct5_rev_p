@@ -3,7 +3,7 @@
 
 #include "../hope_hal/hope_dsp_interface.h"
 
-void ct5_fx_m1m( hope_dsp_buffer_struct * input, hope_dsp_buffer_struct * output );
+void ct5_fx_m1m( hope_dsp_buffer_struct * input, hope_dsp_buffer_struct * output, hope_dsp_control_struct * ctl );
 
 #define CT5_M1M_N_READ_HEADS 3
 

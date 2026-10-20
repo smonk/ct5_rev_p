@@ -42,7 +42,7 @@ void ct5_fx_ct5_init()
 
 }
 
-void ct5_fx_mute( hope_dsp_buffer_struct * input, hope_dsp_buffer_struct * output )
+void ct5_fx_mute( hope_dsp_buffer_struct * input, hope_dsp_buffer_struct * output, hope_dsp_control_struct * ctl )
 {
 	for(uint32_t i = 0; i < HOPE_DSP_BUFFER_SIZE; i++)
 	{
@@ -51,7 +51,7 @@ void ct5_fx_mute( hope_dsp_buffer_struct * input, hope_dsp_buffer_struct * outpu
 	}	
 }
 
-void ct5_fx_pass_through( hope_dsp_buffer_struct * input, hope_dsp_buffer_struct * output )
+void ct5_fx_pass_through( hope_dsp_buffer_struct * input, hope_dsp_buffer_struct * output, hope_dsp_control_struct * ctl )
 {
 	for(uint32_t i = 0; i < HOPE_DSP_BUFFER_SIZE; i++)
 	{
@@ -60,7 +60,7 @@ void ct5_fx_pass_through( hope_dsp_buffer_struct * input, hope_dsp_buffer_struct
 	}	
 }
 
-void ct5_fx_ct5( hope_dsp_buffer_struct * input, hope_dsp_buffer_struct * output )
+void ct5_fx_ct5( hope_dsp_buffer_struct * input, hope_dsp_buffer_struct * output, hope_dsp_control_struct * ctl )
 {
 	static uint32_t algo_is_init = 0;
 	static uint32_t algo_n = 0;
@@ -262,7 +262,7 @@ void ct5_fx_ct5( hope_dsp_buffer_struct * input, hope_dsp_buffer_struct * output
 float temp_gain_vector[ HOPE_DSP_BUFFER_SIZE ];
 float temp_env_follower[ HOPE_DSP_BUFFER_SIZE ];
 
-void ct5_fx_noise_gate( hope_dsp_buffer_struct * input, hope_dsp_buffer_struct * output )
+void ct5_fx_noise_gate( hope_dsp_buffer_struct * input, hope_dsp_buffer_struct * output, hope_dsp_control_struct * ctl )
 {
 
 	uint16_t num_samples = HOPE_DSP_BUFFER_SIZE;

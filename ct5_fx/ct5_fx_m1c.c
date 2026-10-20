@@ -188,7 +188,7 @@ void ct5_fx_m1c_init( void )
 // ██║ ╚═╝ ██║██║  ██║██║██║ ╚████║
 // ╚═╝     ╚═╝╚═╝  ╚═╝╚═╝╚═╝  ╚═══╝
 
-void ct5_fx_m1c( hope_dsp_buffer_struct * input, hope_dsp_buffer_struct * output )
+void ct5_fx_m1c( hope_dsp_buffer_struct * input, hope_dsp_buffer_struct * output, hope_dsp_control_struct * ctl )
 {
 
 	//the first step of development is to make the states work for N = 1. let's try that.

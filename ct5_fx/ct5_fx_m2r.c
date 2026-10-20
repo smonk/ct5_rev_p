@@ -175,7 +175,7 @@ void ct5_fx_m2r_init()
 
 
 
-void ct5_fx_m2r( hope_dsp_buffer_struct * input, hope_dsp_buffer_struct * output )
+void ct5_fx_m2r( hope_dsp_buffer_struct * input, hope_dsp_buffer_struct * output, hope_dsp_control_struct * ctl )
 {
 	static uint32_t is_init = 0;
 	if(!is_init)

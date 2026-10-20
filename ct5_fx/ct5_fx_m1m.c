@@ -44,16 +44,19 @@ state_function_pointer_t m1m_state_overdub_to_change_n( hope_dsp_buffer_struct *
 state_function_pointer_t m1m_state_change_n( hope_dsp_buffer_struct * input, hope_dsp_buffer_struct * output );
 state_function_pointer_t m1m_state_change_n_to_overdub( hope_dsp_buffer_struct * input, hope_dsp_buffer_struct * output );
 
+state_function_pointer_t m1m_stae_overdub_to_exit( hope_dsp_buffer_struct * input, hope_dsp_buffer_struct * output );
 // state_function_pointer_t m1m_state_change_n_to_reset( hope_dsp_buffer_struct * input, hope_dsp_buffer_struct * output ); 
 
 state_function_pointer_t m1m_state_holding( hope_dsp_buffer_struct * input, hope_dsp_buffer_struct * output );
 state_function_pointer_t m1m_state_overdub_to_holding( hope_dsp_buffer_struct * input, hope_dsp_buffer_struct * output );
 state_function_pointer_t m1m_state_holding_to_overdub( hope_dsp_buffer_struct * input, hope_dsp_buffer_struct * output );
 
+state_function_pointer_t m1m_state_holding_to_exit( hope_dsp_buffer_struct * input, hope_dsp_buffer_struct * output );
 
 state_function_pointer_t m1m_state_overdub_to_change_bs( hope_dsp_buffer_struct * input, hope_dsp_buffer_struct * output );
 state_function_pointer_t m1m_state_change_bs( hope_dsp_buffer_struct * input, hope_dsp_buffer_struct * output );
 
+state_function_pointer_t m1m_state_exit( hope_dsp_buffer_struct * input, hope_dsp_buffer_struct * output );
 // state_function_pointer_t m1m_state_change_bs_overdub( hope_dsp_buffer_struct * input, hope_dsp_buffer_struct * output );
 // state_function_pointer_t m1m_state_ch_bs_to_od( hope_dsp_buffer_struct * input, hope_dsp_buffer_struct * output );
 
@@ -71,6 +74,7 @@ state_function_pointer_t m1m_state_change_bs( hope_dsp_buffer_struct * input, ho
 uint32_t m1m_event_freeze_button_is_held( void );
 uint32_t m1m_event_n_switch_has_changed( void );
 uint32_t m1m_event_buffer_size_has_changed( void );
+uint32_t m1m_event_exit_requested( void );
 
 void m1m_helper_zero_buffer( hope_dsp_buffer_struct * input );
 void m1m_helper_copy_buffer( hope_dsp_buffer_struct * input, hope_dsp_buffer_struct * output);
@@ -201,13 +205,13 @@ void ct5_fx_m1m_init( void )
 // ██║╚██╔╝██║██╔══██║██║██║╚██╗██║
 // ██║ ╚═╝ ██║██║  ██║██║██║ ╚████║
 // ╚═╝     ╚═╝╚═╝  ╚═╝╚═╝╚═╝  ╚═══╝
-
-void ct5_fx_m1m( hope_dsp_buffer_struct * input, hope_dsp_buffer_struct * output )
+static uint32_t is_init = 0;
+void ct5_fx_m1m( hope_dsp_buffer_struct * input, hope_dsp_buffer_struct * output, hope_dsp_control_struct * ctl )
 {
 
 	//the first step of development is to make the states work for N = 1. let's try that.
 
-	static uint32_t is_init = 0;
+
 	if(!is_init)
 	{
 		ct5_fx_m1m_init();
@@ -375,6 +379,12 @@ state_function_pointer_t m1m_state_overdub( hope_dsp_buffer_struct * input, hope
 		sfp.next_state = m1m_state_overdub_to_change_bs;
 		return sfp;
 	}
+	
+	if( m1m_event_exit_requested( ) == 1 )
+	{
+		sfp.next_state = m1m_state_overdub_to_exit;
+		return sfp;
+	}
 
 	sfp.next_state = m1m_state_overdub;
 	return sfp;
@@ -425,11 +435,18 @@ state_function_pointer_t m1m_state_holding( hope_dsp_buffer_struct * input, hope
 		sfp.next_state = m1m_state_holding_to_overdub;
 		return sfp;
 	}
+	else if( m1m_event_exit_requested( ) == 1 )
+	{
+		sfp.next_state = m1m_state_holding_to_exit;
+		return sfp;
+	}
 	else
 	{
 		sfp.next_state = m1m_state_holding;
 		return sfp;
 	}
+
+
 }
 
 state_function_pointer_t m1m_state_holding_to_overdub( hope_dsp_buffer_struct * input, hope_dsp_buffer_struct * output )
@@ -627,6 +644,16 @@ uint32_t m1m_event_buffer_size_has_changed( )
 		return 1;
 	}
 
+	return 0;
+}
+
+uint32_t m1m_event_exit_requested( )
+{
+	if( ctl->exit_request == 1 )
+	{
+		// ctl->exit_request = 0;
+		return 1;
+	}
 	return 0;
 }
 

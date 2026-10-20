@@ -39,6 +39,7 @@
 
 #include "midi.h"
 
+#include "ct5_fx_selector.h"
 #include "ct5_buffer.h"
 #include "ct5_fx_ct5.h"
 #include "ct5_fx_m1c.h"
@@ -348,10 +349,11 @@ int main(void)
     }
 
     //the dsp function
+    ct5_fx_select( my_input_dsp_buffer, my_output_dsp_buffer, my_btn_and_sw );
     // my_fx_pass_through( my_input_dsp_buffer, my_output_dsp_buffer );
     // ct5_fx_ct5( my_input_dsp_buffer, my_output_dsp_buffer );
     // ct5_fx_m1c( my_input_dsp_buffer, my_output_dsp_buffer );
-    ct5_fx_m1m( my_input_dsp_buffer, my_output_dsp_buffer );
+    // ct5_fx_m1m( my_input_dsp_buffer, my_output_dsp_buffer );
     // ct5_fx_m2r( my_input_dsp_buffer, my_output_dsp_buffer );
     // ct5_fx_m3t( my_input_dsp_buffer, my_output_dsp_buffer );
     // ct5_fx_mute( my_input_dsp_buffer, my_output_dsp_buffer );
