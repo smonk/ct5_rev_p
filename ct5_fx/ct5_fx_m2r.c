@@ -70,10 +70,14 @@ state_function_pointer_t m2r_state_record_to_reset( hope_dsp_buffer_struct * inp
 state_function_pointer_t m2r_state_n_change_while_playing( hope_dsp_buffer_struct * input, hope_dsp_buffer_struct * output );
 state_function_pointer_t m2r_state_n_change_while_recording( hope_dsp_buffer_struct * input, hope_dsp_buffer_struct * output );
 
+state_function_pointer_t m2r_state_playback_to_exit( hope_dsp_buffer_struct * input, hope_dsp_buffer_struct * output );
+state_function_pointer_t m2r_state_exit( hope_dsp_buffer_struct * input, hope_dsp_buffer_struct * output );
+
 uint32_t m2r_event_record_button_pressed( void );
 uint32_t m2r_event_record_button_was_tapped( void );
 uint32_t m2r_event_record_button_was_held( void );
 uint32_t m2r_event_n_switch_changed( void );
+uint32_t m2r_event_exit_requested( void );
 
 void m2r_helper_playback_block( ct5_buffer_t * buf,  hope_dsp_buffer_struct * output );
 void m2r_helper_record_block( ct5_buffer_t * buf, hope_dsp_buffer_struct * input);
@@ -174,16 +178,21 @@ void ct5_fx_m2r_init()
 // ╚═╝     ╚═╝╚═╝  ╚═╝╚═╝╚═╝  ╚═══╝
 
 
+static uint32_t is_init = 0;
+static hope_dsp_control_struct * l_ctl;
 
 void ct5_fx_m2r( hope_dsp_buffer_struct * input, hope_dsp_buffer_struct * output, hope_dsp_control_struct * ctl )
 {
-	static uint32_t is_init = 0;
+
+	l_ctl = ctl;
+
 	if(!is_init)
 	{
 		ct5_fx_m2r_init();
 		is_init = 1;
 		return;
 	}
+
 	//zero the output buffer,start
 	m2r_helper_zero_buffer( output );
 
@@ -202,6 +211,13 @@ void ct5_fx_m2r( hope_dsp_buffer_struct * input, hope_dsp_buffer_struct * output
 
 	//do the clean mix here?
 	m2r_helper_wet_dry_mix( input, dry_gain, output, wet_gain, output );
+
+	if( ctl->exit_request == 1 )
+	{
+		m2r_helper_block_length_fade_out( output );
+		ctl->exit_acknowledge = 1;
+		is_init = 0;
+	}
 
 }
 
@@ -248,7 +264,12 @@ state_function_pointer_t m2r_state_reset( hope_dsp_buffer_struct * input, hope_d
 	//else we stay in this state
 
 	state_function_pointer_t sfp;
-	if( m2r_event_record_button_pressed() )
+	if( m2r_event_exit_requested() )
+	{
+		sfp.next_state = m2r_state_playback_to_exit;
+		return sfp;
+	}
+	else if( m2r_event_record_button_pressed() )
 	{
 		//go to mtr_state_rec_overdub_1_max
 		//first we need a struct to put the pointer in
@@ -504,7 +525,14 @@ state_function_pointer_t m2r_state_play_n_max( hope_dsp_buffer_struct * input, h
 
 	//in this state we are just playing back, no recording.
 	state_function_pointer_t sfp;
-	if( m2r_event_record_button_pressed() )
+	
+	if( m2r_event_exit_requested() )
+	{
+
+		sfp.next_state = m2r_state_playback_to_exit;
+		return sfp;
+	}
+	else if( m2r_event_record_button_pressed() )
 	{
 
 		sfp.next_state = m2r_state_playback_to_record;
@@ -520,6 +548,64 @@ state_function_pointer_t m2r_state_play_n_max( hope_dsp_buffer_struct * input, h
 		sfp.next_state = m2r_state_play_n_max;
 		return sfp;
 	}
+
+}
+
+state_function_pointer_t m2r_state_playback_to_exit( hope_dsp_buffer_struct * input, hope_dsp_buffer_struct * output )
+{
+	//do the thing
+
+	//led is blue?
+	hope_ct5_led_on_setting = hope_ct5_pwm_rgb_set_solid_blue;
+
+	//we need to playback m2r_n_playing buffers
+	//we need a temp buffer to hold teh output of playback
+	hope_dsp_buffer_struct temp_read_head_data;
+	float trhd_left[HOPE_DSP_BUFFER_SIZE];
+	float trhd_right[HOPE_DSP_BUFFER_SIZE];
+	temp_read_head_data.left_channel_buffer = trhd_left;
+	temp_read_head_data.right_channel_buffer = trhd_right;
+	
+	//zero the output buffer
+	m2r_helper_zero_buffer( output );
+
+	uint32_t temp_n;
+	if( m2r_n_overdubs < m2r_n_playing )
+	{
+		temp_n = m2r_n_overdubs;
+	}
+	else
+	{
+		temp_n = m2r_n_playing;
+	}
+	//now stack the read data
+	for( uint32_t i = 1; i <= temp_n; i++)
+	{
+		m2r_helper_playback_block( bufs[i], &temp_read_head_data );
+		m2r_helper_sum_2_buffers( &temp_read_head_data, output, output );
+	}
+
+	m2r_helper_block_length_fade_out( output );
+
+	//in this state we are just playing back, no recording.
+	state_function_pointer_t sfp;
+
+	sfp.next_state = m2r_state_exit;
+	return sfp;
+
+}
+
+state_function_pointer_t m2r_state_exit( hope_dsp_buffer_struct * input, hope_dsp_buffer_struct * output )
+{
+
+	m2r_helper_zero_buffer( output );
+
+	l_ctl->exit_acknowledge = 1;
+	is_init = 0;
+
+	state_function_pointer_t sfp;
+	sfp.next_state = m2r_state_exit;
+	return sfp;
 
 }
 
@@ -808,6 +894,15 @@ uint32_t m2r_event_n_switch_changed( )
 	
 }
 
+uint32_t m2r_event_exit_requested( )
+{
+	// if( l_ctl->exit_request == 1 )
+	// {
+	// 	// ctl->exit_request = 0;
+	// 	return 1;
+	// }
+	return 0;
+}
 
 
 // ██╗  ██╗███████╗██╗     ██████╗ ███████╗██████╗ ███████╗

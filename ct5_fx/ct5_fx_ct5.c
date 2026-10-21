@@ -48,7 +48,12 @@ void ct5_fx_mute( hope_dsp_buffer_struct * input, hope_dsp_buffer_struct * outpu
 	{
 		output->left_channel_buffer[i] = 0;
 		output->right_channel_buffer[i] = 0;
-	}	
+	}
+	
+	if( ctl->exit_request == 1 )
+	{
+		ctl->exit_acknowledge = 1;
+	}
 }
 
 void ct5_fx_pass_through( hope_dsp_buffer_struct * input, hope_dsp_buffer_struct * output, hope_dsp_control_struct * ctl )

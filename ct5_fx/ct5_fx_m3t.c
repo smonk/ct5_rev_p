@@ -229,6 +229,12 @@ void ct5_fx_m3t( hope_dsp_buffer_struct * input, hope_dsp_buffer_struct * output
 
 	m3t_helper_wet_dry_mix( input, dry_gain, output, wet_gain, output );
 
+	if( ctl->exit_request == 1 )
+	{
+		m3t_helper_block_length_fade_out( output );
+		ctl->exit_acknowledge = 1;
+		is_init = 0;
+	}
 }
 
 // ███████╗████████╗ █████╗ ████████╗███████╗███████╗

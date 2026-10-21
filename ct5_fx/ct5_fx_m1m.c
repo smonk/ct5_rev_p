@@ -55,6 +55,7 @@ state_function_pointer_t m1m_state_holding_to_exit( hope_dsp_buffer_struct * inp
 
 state_function_pointer_t m1m_state_overdub_to_change_bs( hope_dsp_buffer_struct * input, hope_dsp_buffer_struct * output );
 state_function_pointer_t m1m_state_change_bs( hope_dsp_buffer_struct * input, hope_dsp_buffer_struct * output );
+state_function_pointer_t m1m_state_overdub_to_exit( hope_dsp_buffer_struct * input, hope_dsp_buffer_struct * output );
 
 state_function_pointer_t m1m_state_exit( hope_dsp_buffer_struct * input, hope_dsp_buffer_struct * output );
 // state_function_pointer_t m1m_state_change_bs_overdub( hope_dsp_buffer_struct * input, hope_dsp_buffer_struct * output );
@@ -206,11 +207,11 @@ void ct5_fx_m1m_init( void )
 // ██║ ╚═╝ ██║██║  ██║██║██║ ╚████║
 // ╚═╝     ╚═╝╚═╝  ╚═╝╚═╝╚═╝  ╚═══╝
 static uint32_t is_init = 0;
+static hope_dsp_control_struct * l_ctl;
 void ct5_fx_m1m( hope_dsp_buffer_struct * input, hope_dsp_buffer_struct * output, hope_dsp_control_struct * ctl )
 {
 
-	//the first step of development is to make the states work for N = 1. let's try that.
-
+	l_ctl = ctl;
 
 	if(!is_init)
 	{
@@ -254,7 +255,12 @@ void ct5_fx_m1m( hope_dsp_buffer_struct * input, hope_dsp_buffer_struct * output
 
 	m1m_helper_wet_dry_mix( input, dry_gain, output, wet_gain, output );
 
-	
+	if( ctl->exit_request == 1 )
+	{
+		m1m_helper_block_length_fade_out( output );
+		ctl->exit_acknowledge = 1;
+		is_init = 0;
+	}
 }
 
 
@@ -275,7 +281,7 @@ state_function_pointer_t m1m_state_reset( hope_dsp_buffer_struct * input, hope_d
 	
 	//this state wipes the ram annd only exits after it is totally wiped, which wil take several blocks of time.
 
-	uint32_t wipe_ratio = 64;
+	uint32_t wipe_ratio = 256;
 	uint32_t N = HOPE_DSP_BUFFER_SIZE * wipe_ratio;
 	static uint32_t n = 0;
 
@@ -390,6 +396,18 @@ state_function_pointer_t m1m_state_overdub( hope_dsp_buffer_struct * input, hope
 	return sfp;
 }
 
+state_function_pointer_t m1m_state_overdub_to_exit( hope_dsp_buffer_struct * input, hope_dsp_buffer_struct * output )
+{
+
+	m1m_helper_block_length_fade_out( input );
+	m1m_helper_ct5_algo( bufs[m1m_link_n_processing], input, output );
+	m1m_helper_block_length_fade_out( output );
+
+	state_function_pointer_t sfp;
+	sfp.next_state = m1m_state_exit;
+	return sfp;
+}
+
 state_function_pointer_t m1m_state_overdub_to_holding( hope_dsp_buffer_struct * input, hope_dsp_buffer_struct * output )
 {
 	// in this state you keep running the base algo but
@@ -471,6 +489,17 @@ state_function_pointer_t m1m_state_holding_to_overdub( hope_dsp_buffer_struct * 
 	// then return to overdub
 	state_function_pointer_t sfp;
 	sfp.next_state = m1m_state_overdub;
+	return sfp;
+}
+
+state_function_pointer_t m1m_state_holding_to_exit( hope_dsp_buffer_struct * input, hope_dsp_buffer_struct * output )
+{
+	m1m_helper_block_length_fade_out( input );
+	m1m_helper_ct5_algo( bufs[m1m_link_n_processing], input, output );
+	m1m_helper_block_length_fade_out( output );
+
+	state_function_pointer_t sfp;
+	sfp.next_state = m1m_state_exit;
 	return sfp;
 }
 
@@ -609,6 +638,19 @@ state_function_pointer_t m1m_state_change_bs( hope_dsp_buffer_struct * input, ho
 	return sfp;
 }
 
+state_function_pointer_t m1m_state_exit( hope_dsp_buffer_struct * input, hope_dsp_buffer_struct * output )
+{
+
+	m1m_helper_zero_buffer( output );
+
+	l_ctl->exit_acknowledge = 1;
+	is_init = 0;
+
+	state_function_pointer_t sfp;
+	sfp.next_state = m1m_state_exit;
+	return sfp;
+}
+
 // ███████╗██╗   ██╗███████╗███╗   ██╗████████╗███████╗
 // ██╔════╝██║   ██║██╔════╝████╗  ██║╚══██╔══╝██╔════╝
 // █████╗  ██║   ██║█████╗  ██╔██╗ ██║   ██║   ███████╗
@@ -649,11 +691,11 @@ uint32_t m1m_event_buffer_size_has_changed( )
 
 uint32_t m1m_event_exit_requested( )
 {
-	if( ctl->exit_request == 1 )
-	{
-		// ctl->exit_request = 0;
-		return 1;
-	}
+	// if( l_ctl->exit_request == 1 )
+	// {
+	// 	// ctl->exit_request = 0;
+	// 	return 1;
+	// }
 	return 0;
 }
 

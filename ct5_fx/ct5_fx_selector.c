@@ -71,6 +71,7 @@ void ct5_fx_select(hope_dsp_buffer_struct *input, hope_dsp_buffer_struct *output
             break;
         case 2:
             fx_ptr = ct5_fx_m2r;
+            // fx_ptr = ct5_fx_mute;
             break;
         case 3:
             fx_ptr = ct5_fx_m3t;
