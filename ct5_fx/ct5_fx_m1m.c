@@ -281,7 +281,7 @@ state_function_pointer_t m1m_state_reset( hope_dsp_buffer_struct * input, hope_d
 	
 	//this state wipes the ram annd only exits after it is totally wiped, which wil take several blocks of time.
 
-	uint32_t wipe_ratio = 256;
+	uint32_t wipe_ratio = 128;
 	uint32_t N = HOPE_DSP_BUFFER_SIZE * wipe_ratio;
 	static uint32_t n = 0;
 

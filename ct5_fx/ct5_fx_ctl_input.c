@@ -23,12 +23,13 @@ float interpret_start_randomization( float );
 float interpret_playback_volume( float );
 float interpret_overdub_decay( float );
 
+void interpret_m1m_normalised_dir( float input_value, uint32_t n, float public_values[3] );
 
 #define CT5_FX_Q_COUNTER_MAX ( 5 )
 static int32_t q_counter = 0;
 
-float stash_pot_array[3][ HOPE_NUM_POTS_AND_CVIN ] = {0};
 
+float stash_pot_array[3][ HOPE_NUM_POTS_AND_CVIN ] = {0};
 //1 means use stashed, 0 means use live
 uint8_t stashed_or_live_array[3][ HOPE_NUM_POTS_AND_CVIN ] = {0};
 
@@ -42,6 +43,10 @@ void ct5_fx_get_m1c_variables(m1c_variables_t *m1c_variables)
 
 	m1c_variables->wet_gain = interpret_mix_pot_wet_gain( my_pot_and_cvin[ 3 ].normalized_value );
 	m1c_variables->dry_gain = interpret_mix_pot_dry_gain( my_pot_and_cvin[ 3 ].normalized_value );
+
+
+
+
 	m1c_variables->desired_dir = interpret_desired_dir( my_pot_and_cvin[ 2 ].normalized_value );
 
 	m1c_variables->desired_buffer_size = interpret_buffer_size( my_pot_and_cvin[ 1 ].normalized_value );
@@ -58,9 +63,15 @@ void ct5_fx_get_m1m_variables(m1m_variables_t *m1m_variables)
 	m1m_variables->dry_gain = interpret_mix_pot_dry_gain( my_pot_and_cvin[ 3 ].normalized_value );
 	// m1m_variables->desired_dir[ m1m_variables->desired_n ] = interpret_desired_dir( my_pot_and_cvin[ 2 ].normalized_value );
 	// m1m_variables->desired_dir[ 0 ] = interpret_desired_dir( my_pot_and_cvin[ 2 ].normalized_value );
-	m1m_variables->desired_dir[ 0 ] = 1.03;
-	m1m_variables->desired_dir[ 1 ] = -1.03;
-	m1m_variables->desired_dir[ 2 ] = 1;
+	
+	static float dir_head_pot_normalised_values [ 3 ] = { 0.0, 0.0, 0.0 };
+	interpret_m1m_normalised_dir( my_pot_and_cvin[ 2 ].normalized_value, m1m_variables->desired_n, dir_head_pot_normalised_values );
+	m1m_variables->desired_dir[ 0 ] = interpret_desired_dir( dir_head_pot_normalised_values[ 0 ] ); //dir_head_pot_normalised_values[ 0 ];
+	m1m_variables->desired_dir[ 1 ] = interpret_desired_dir( dir_head_pot_normalised_values[ 1 ] ); //dir_head_pot_normalised_values[ 1 ];
+	m1m_variables->desired_dir[ 2 ] = interpret_desired_dir( dir_head_pot_normalised_values[ 2 ] ); //dir_head_pot_normalised_values[ 2 ];
+	// m1m_variables->desired_dir[ 0 ] = 1.03;
+	// m1m_variables->desired_dir[ 1 ] = -1.03;
+	// m1m_variables->desired_dir[ 2 ] = 1;
 	
 	// m1m_variables->desired_dir[ 1 ] = m1m_variables->desired_dir[ 0 ]*1.2;
 	// m1m_variables->desired_dir[ 2 ] = m1m_variables->desired_dir[ 0 ]*(-5/6);
@@ -322,20 +333,59 @@ float interpret_overdub_decay( float val )
 	return val; //my_pot_and_cvin[ 0 ].normalized_value;	
 }
 
+#define NUM_STATES 8
+#define ZONE_SIZE ( 1.0f / (float)NUM_STATES )
+#define HYSTERESIS ( ZONE_SIZE * 0.05f )
+
 uint32_t interpret_buffer_size( float val )
 {
 
+	static uint8_t current_state = 0;
+
+    // 1. Calculate absolute boundaries for the active state
+    float lower_boundary = (float)current_state * ZONE_SIZE;
+    float upper_boundary = (float)(current_state + 1) * ZONE_SIZE;
+
+	// 2. Expand the boundaries outward by the hysteresis dead-band
+    if ( current_state > 0 ) 
+	{
+        lower_boundary -= HYSTERESIS;
+    }
+    if ( current_state < ( NUM_STATES - 1 ) ) 
+	{
+        upper_boundary += HYSTERESIS;
+    }
+
+	// 3. Only change states if the float pushes *past* the buffer zone
+    if ( val < lower_boundary || val > upper_boundary ) 
+	{
+        // Calculate the raw mathematical index
+        int32_t new_state = (int32_t)( val / ZONE_SIZE);
+        
+        // Clamp bounds to prevent float rounding errors at absolute limits (0.0 or 1.0)
+        if ( new_state < 0 ) 
+		{
+            new_state = 0;
+        }
+        else if ( new_state >= NUM_STATES )
+		{
+            new_state = NUM_STATES - 1;
+        }
+        
+        current_state = (uint8_t)new_state;
+    }
+	
 	//if we use 8 buffer sizes we should get
 	// 8, 4, 2, 1, .5, .25, .125, .0625 seconds. 
 	// we need to know what is the max buffer size.
 
 	uint32_t max_size = CT5_BUFFER_MEM_SIZE_WORDS/6;
 
-	//make val ( a float with range 0 to 1 ) into an unsigned integer range 0 to 7
-	val *= 7.99;
+	// //make val ( a float with range 0 to 1 ) into an unsigned integer range 0 to 7
+	// val *= 7.99;
 
 	uint32_t temp = (uint32_t)val;
-	switch(temp)
+	switch( current_state )
 	{
 		case 0:
 			return max_size/128; 
@@ -354,7 +404,7 @@ uint32_t interpret_buffer_size( float val )
 		case 7:
 			return max_size;
 		default:
-				return max_size;
+			return max_size;
 	}
 
 }
@@ -362,4 +412,47 @@ uint32_t interpret_buffer_size( float val )
 float interpret_feedback_volume( float val )
 {
 	return val; 
+}
+
+
+//the m1m dir switch pot
+
+void interpret_m1m_normalised_dir( float input_value, uint32_t n, float public_values[3] )
+{
+	static float entrance_values[3] = { 0.0, 0.0, 0.0 };
+	// static float public_values[3] = { 0.0, 0.0, 0.0 };
+	float budge_delta = 0.05;
+	static uint8_t update_enable[3] = { 0, 0, 0 };
+
+	static uint32_t last_n = 0;
+	if( n != last_n )
+	{
+		//n changed so we need to store the pot value at this moment of switch.
+		entrance_values[ n ] = input_value;
+		update_enable[ 0 ] = 0;
+		update_enable[ 1 ] = 0;
+		update_enable[ 2 ] = 0;
+	}
+	last_n = n;
+
+	//now check the current value against the stored value for that n
+	if( update_enable[ n ] == 0 )
+	{
+		float difference = input_value - entrance_values[ n ];
+		if( difference < 0.0 )
+		{
+			difference *= -1.0;
+		}
+	
+		if( difference > budge_delta )
+		{
+			update_enable[ n ] = 1;
+			public_values[ n ] = input_value;
+		}
+	}
+	else 
+	{
+		public_values[ n ] = input_value;
+	}
+	
 }
