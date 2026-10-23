@@ -24,7 +24,7 @@ void biquad_config_high_pass( BiquadIIR_t * f, float cutoff_freq, float Q, float
     f->a2 = a2_raw / a0_raw;
 }
 
-oid biquad_config_low_pass( BiquadIIR_t * f, float cutoff_freq, float Q, float sample_rate )
+void biquad_config_low_pass( BiquadIIR_t * f, float cutoff_freq, float Q, float sample_rate )
 {
     // 1. Calculate angular frequency and filter parameters
     float w0 = 2.0f * 3.14159265f * cutoff_freq / sample_rate;
@@ -48,7 +48,7 @@ oid biquad_config_low_pass( BiquadIIR_t * f, float cutoff_freq, float Q, float s
 }
 
 
-inline float biqaud_process_sample( BiquadIIR_t * f, float input )
+float biquad_process_sample( BiquadIIR_t * f, float input )
 {
     float output =  ( f->b0 * input ) +
                     ( f->b1 * f->x1 ) +
@@ -62,4 +62,12 @@ inline float biqaud_process_sample( BiquadIIR_t * f, float input )
     f->y1 = output;
 
     return output;
+}
+
+void biquad_clear_buffer( BiquadIIR_t * f )
+{
+    f->x1 = 0.0f;
+    f->x2 = 0.0f;
+    f->y1 = 0.0f;
+    f->y2 = 0.0f;
 }

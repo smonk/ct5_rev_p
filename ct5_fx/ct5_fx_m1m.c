@@ -11,6 +11,7 @@
 
 #include "ct5_fx_state_machine.h"
 #include "ct5_fx_ctl_input.h"
+#include "ct5_fx_biquads.h"
 
 //███╗   ███╗ ██╗███╗   ███╗
 //████╗ ████║███║████╗ ████║
@@ -95,6 +96,11 @@ static uint32_t m1m_link_n_processing = 0;
 
 // static uint32_t m1m_link_n_change_lock = 0;
 
+static BiquadIIR_t left_channel_20Hz_hpf_biquad;
+static BiquadIIR_t right_channel_20Hz_hpf_biquad;
+
+static BiquadIIR_t left_channel_shrill_lpf_biquad;
+static BiquadIIR_t right_channel_shrill_lpf_biquad;
 
 
 // ██╗███╗   ██╗██╗████████╗
@@ -196,6 +202,19 @@ void ct5_fx_m1m_init( void )
         }
 	}
 	link_0_sfp.next_state = m1m_state_reset;
+
+	biquad_config_high_pass( & left_channel_20Hz_hpf_biquad, 20, 0.70710678118f, 44100 );
+	biquad_config_high_pass( & right_channel_20Hz_hpf_biquad, 20, 0.70710678118f, 44100 );
+
+	biquad_config_low_pass( & left_channel_shrill_lpf_biquad, 3000, 0.70710678118f, 44100 );
+	biquad_config_low_pass( & right_channel_shrill_lpf_biquad, 3000, 0.70710678118f, 44100 );
+
+
+	biquad_clear_buffer( & left_channel_20Hz_hpf_biquad );
+	biquad_clear_buffer( & right_channel_20Hz_hpf_biquad );
+
+	biquad_clear_buffer( & left_channel_shrill_lpf_biquad );
+	biquad_clear_buffer( & right_channel_shrill_lpf_biquad );
 	// link_1_sfp.next_state = m1m_state_reset;
 	// link_2_sfp.next_state = m1m_state_reset;
 }
@@ -343,8 +362,14 @@ state_function_pointer_t m1m_state_reset_to_overdub( hope_dsp_buffer_struct * in
     for( uint32_t j = 0; j < CT5_M1M_N_READ_HEADS + 1; j++ )
     {
         bufs[m1m_link_n_processing]->m1m_variables->current_feedback_volume[j] = 0.0f;
-        bufs[m1m_link_n_processing]->m1m_variables->use_feedback_volume_override[j] = 0;	
+        bufs[m1m_link_n_processing]->m1m_variables->use_feedback_volume_override[j] = 1;	
     }
+
+	for( uint32_t j = 0; j <= bufs[m1m_link_n_processing]->m1m_variables->current_n; j++ )
+	{
+        bufs[m1m_link_n_processing]->m1m_variables->use_feedback_volume_override[j] = 0;			
+	}
+
 
     for( uint32_t j = 0; j < ( bufs[m1m_link_n_processing]->m1m_variables->current_n + 1 ) ; j++ )
     {
@@ -477,9 +502,13 @@ state_function_pointer_t m1m_state_holding_to_overdub( hope_dsp_buffer_struct * 
     
 	for( uint32_t j = 0; j < CT5_M1M_N_READ_HEADS; j++ )
     {
-        bufs[m1m_link_n_processing]->m1m_variables->use_feedback_volume_override[j] = 0;	
+        bufs[m1m_link_n_processing]->m1m_variables->use_feedback_volume_override[j] = 1;	
     }
 
+	for( uint32_t j = 0; j <= bufs[m1m_link_n_processing]->m1m_variables->current_n; j++ )
+	{
+        bufs[m1m_link_n_processing]->m1m_variables->use_feedback_volume_override[j] = 0;			
+	}
 
 	// then run the algo
 	m1m_helper_ct5_algo( bufs[m1m_link_n_processing], input, output );
@@ -908,7 +937,6 @@ void m1m_helper_ct5_algo( ct5_buffer_t * buf, hope_dsp_buffer_struct * input, ho
 	}
 
 	//calculate the feedback volume vector
-	//TODO MAKE THIS READ FROM THE POT
 	float feedback_volume_vector[ CT5_M1M_N_READ_HEADS ][ HOPE_DSP_BUFFER_SIZE ];
 	float temp_desired_feedback_volume[ CT5_M1M_N_READ_HEADS ];
     for( uint32_t j = 0;  j < CT5_M1M_N_READ_HEADS; j++ )
@@ -992,15 +1020,49 @@ void m1m_helper_ct5_algo( ct5_buffer_t * buf, hope_dsp_buffer_struct * input, ho
             temp_feedback_sum_right += read_head_data_right[j][i] * feedback_volume_vector[j][i];
 
         }
-        //the compressor
-        temp_feedback_sum_left *= 0.33333334f;
-        float temp_cubed = temp_feedback_sum_left * temp_feedback_sum_left * temp_feedback_sum_left;
-        temp_feedback_sum_left = ( 1.5f * temp_feedback_sum_left ) - ( 0.5f * temp_cubed );
-	    
-        temp_feedback_sum_right *= 0.33333334f;
-        temp_cubed = temp_feedback_sum_right * temp_feedback_sum_right * temp_feedback_sum_right;
-        temp_feedback_sum_right = ( 1.5f * temp_feedback_sum_right ) - ( 0.5f * temp_cubed );
+		//add the hpf and lpf here
+		//the hpf is mostly to eliminate the dc offset and sub audio frequencies
+	
+		temp_feedback_sum_left = biquad_process_sample( & left_channel_20Hz_hpf_biquad, temp_feedback_sum_left );
+		temp_feedback_sum_right = biquad_process_sample( & right_channel_20Hz_hpf_biquad, temp_feedback_sum_right );
+
+		//the lpf is to make it so the echoes shifting up dont get too piercing
+		temp_feedback_sum_left = biquad_process_sample( & left_channel_shrill_lpf_biquad, temp_feedback_sum_left );
+		temp_feedback_sum_right = biquad_process_sample( & right_channel_shrill_lpf_biquad, temp_feedback_sum_right );
         
+		//the compressor (one style)
+        // temp_feedback_sum_left *= 0.33333334f;
+        // float temp_cubed = temp_feedback_sum_left * temp_feedback_sum_left * temp_feedback_sum_left;
+        // temp_feedback_sum_left = ( 1.5f * temp_feedback_sum_left ) - ( 0.5f * temp_cubed );
+	    
+        // temp_feedback_sum_right *= 0.33333334f;
+        // temp_cubed = temp_feedback_sum_right * temp_feedback_sum_right * temp_feedback_sum_right;
+        // temp_feedback_sum_right = ( 1.5f * temp_feedback_sum_right ) - ( 0.5f * temp_cubed );
+
+		//another type of soft clip
+		float drive = 1;
+
+		temp_feedback_sum_left = ( temp_feedback_sum_left * drive ) / ( 1.0f + drive * fabsf(temp_feedback_sum_left) );
+		temp_feedback_sum_right = ( temp_feedback_sum_right * drive ) / ( 1.0f + drive * fabsf(temp_feedback_sum_right) );
+
+		//clamp at +1 and -1
+		if( temp_feedback_sum_left > 1.0f )
+		{
+			temp_feedback_sum_left = 1.0f;
+		}
+		else if( temp_feedback_sum_left < -1.0f )
+		{
+			temp_feedback_sum_left = -1.0f;
+		}
+		if( temp_feedback_sum_right > 1.0f )
+		{
+			temp_feedback_sum_right = 1.0f;
+		}
+		else if( temp_feedback_sum_right < -1.0f )
+		{
+			temp_feedback_sum_right = -1.0f;
+		}
+
         //now write
         *((write_head_address_vector[i] + buf->left_channel_physical_memory_start_address)) = 
             temp_feedback_sum_left

@@ -54,6 +54,18 @@ void ct5_fx_select(hope_dsp_buffer_struct *input, hope_dsp_buffer_struct *output
             ctl->exit_request = 0;
             ctl->exit_acknowledge = 0;
             current_fx_number = desired_fx_number;
+            //clear the button flags here
+            btn_and_sw[6].pressed_event_flag = 0;
+            btn_and_sw[6].released_event_flag = 0;
+            btn_and_sw[6].tap_event_flag = 0;
+            btn_and_sw[6].hold_event_flag = 0;
+
+            btn_and_sw[7].pressed_event_flag = 0;
+            btn_and_sw[7].released_event_flag = 0;
+            btn_and_sw[7].tap_event_flag = 0;
+            btn_and_sw[7].hold_event_flag = 0;
+
+
         }
         
     }
