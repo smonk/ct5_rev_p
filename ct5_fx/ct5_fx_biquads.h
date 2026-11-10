@@ -8,6 +8,7 @@ typedef struct {
     float y1; float y2;
 } BiquadIIR_t;
 
+
 void biquad_config_high_pass( BiquadIIR_t * f, float cutoff_freq, float Q, float sample_rate ); 
 void biquad_config_low_pass( BiquadIIR_t * f, float cutoff_freq, float Q, float sample_rate );
 
@@ -28,5 +29,36 @@ void biquad_clear_buffer( BiquadIIR_t * f );
 
 //     return output;
 // }
+
+//tilt filter section
+// Structure to hold filter coefficients and history states
+typedef struct {
+    // Coefficients
+    float b0;
+    float b1;
+    float a1;
+    
+    // State variables (history registers)
+    float x1;
+    float y1;
+} tilt_filter_t;
+
+// Function Prototypes
+void tilt_init(tilt_filter_t* filter);
+void tilt_update_coefficients(tilt_filter_t* filter, float sample_rate, float pivot_freq, float gain_db);
+void tilt_reset(tilt_filter_t* filter);
+
+// Inline function for per-sample processing
+static inline float tilt_process_sample(tilt_filter_t* filter, float input) {
+    // Direct Form 1 implementation
+    float output = (filter->b0 * input) + (filter->b1 * filter->x1) - (filter->a1 * filter->y1);
+    
+    // Update history
+    filter->x1 = input;
+    filter->y1 = output;
+    
+    return output;
+}
+
 
 #endif

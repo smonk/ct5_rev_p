@@ -780,10 +780,20 @@ void m1m_helper_zero_buffer( hope_dsp_buffer_struct * input )
 
 void m1m_helper_wet_dry_mix( hope_dsp_buffer_struct * input_dry, float dry_gain, hope_dsp_buffer_struct * input_wet, float wet_gain, hope_dsp_buffer_struct * output )
 {
+	
+	static float last_dry_gain = 0.0f;
+	static float last_wet_gain = 0.0f;
+
+	float dry_increment = ( dry_gain - last_dry_gain ) / HOPE_DSP_BUFFER_SIZE;
+	float wet_increment = ( wet_gain - last_wet_gain ) / HOPE_DSP_BUFFER_SIZE;
+
 	for(uint32_t i = 0; i < HOPE_DSP_BUFFER_SIZE; i++)
 	{
-		output->left_channel_buffer[i] = dry_gain * input_dry->left_channel_buffer[i] + wet_gain * input_wet->left_channel_buffer[i];		
-		output->right_channel_buffer[i] = dry_gain * input_dry->right_channel_buffer[i] + wet_gain * input_wet->right_channel_buffer[i];
+		last_dry_gain += dry_increment;
+		last_wet_gain += wet_increment;
+
+		output->left_channel_buffer[i] = last_dry_gain * input_dry->left_channel_buffer[i] + last_wet_gain * input_wet->left_channel_buffer[i];		
+		output->right_channel_buffer[i] = last_dry_gain * input_dry->right_channel_buffer[i] + last_wet_gain * input_wet->right_channel_buffer[i];
 	}
 
 }

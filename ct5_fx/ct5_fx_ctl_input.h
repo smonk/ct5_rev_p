@@ -5,11 +5,12 @@
 #include "ct5_fx_m1m.h"
 #include "ct5_fx_m2r.h"
 #include "ct5_fx_m3t.h"
+#include "ct5_fx_m3d.h"
 
 void ct5_fx_get_m1c_variables(m1c_variables_t *m1c_variables);
 void ct5_fx_get_m1m_variables(m1m_variables_t *m1m_variables);
 void ct5_fx_get_m2r_variables(m2r_variables_t *m2r_variables);
 void ct5_fx_get_m3t_variables(m3t_variables_t *m3t_variables);
-
+void ct5_fx_get_m3d_variables(m3d_variables_t *m3d_variables);
 
 #endif

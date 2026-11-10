@@ -4,6 +4,7 @@
 #include "ct5_fx_m1m.h"
 #include "ct5_fx_m2r.h"
 #include "ct5_fx_m3t.h"
+#include "ct5_fx_m3d.h"
 
 #include "../hope_hal/hope_dsp_interface.h"
 #include "../hope_hal/hope_btn_and_sw.h"
@@ -86,7 +87,7 @@ void ct5_fx_select(hope_dsp_buffer_struct *input, hope_dsp_buffer_struct *output
             // fx_ptr = ct5_fx_mute;
             break;
         case 3:
-            fx_ptr = ct5_fx_m3t;
+            fx_ptr = ct5_fx_m3d;
             break;
         default:
             fx_ptr = ct5_fx_mute;

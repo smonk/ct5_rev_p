@@ -13,6 +13,7 @@
 #include "ct5_fx_m1m.h"
 #include "ct5_fx_m2r.h"
 #include "ct5_fx_m3t.h"
+#include "ct5_fx_m3d.h"
 
 typedef struct {
 	
@@ -82,6 +83,9 @@ typedef struct {
 
 	//a pointer to m3t variables
 	m3t_variables_t * m3t_variables;
+
+	//a pointer to m3d variables
+	m3d_variables_t * m3d_variables;
 
 
 } ct5_buffer_t;

@@ -20,6 +20,8 @@ float interpret_desired_dir( float );
 float interpret_slice_length( float );
 float interpret_start_randomization( float );
 
+float interpret_double_space_value( float );
+
 float interpret_playback_volume( float );
 float interpret_overdub_decay( float );
 
@@ -114,6 +116,19 @@ void ct5_fx_get_m3t_variables(m3t_variables_t *m3t_variables)
 {
 	m3t_variables->m3t_n_switch = interpret_n_switch();
 
+	//use an exponential average on pot 3
+	static float mix_pot_alpha = 0.05;
+	static float mix_pot_previous_filtered_value = 0; //init to 0.
+
+	float mix_pot_filtered_value = mix_pot_alpha * my_pot_and_cvin[ 3 ].normalized_value + ( 1.0 - mix_pot_alpha ) * mix_pot_previous_filtered_value;
+	mix_pot_previous_filtered_value = mix_pot_filtered_value;
+
+	//exponential average on volume pot
+	static float vol_pot_alpha = 0.05;
+	static float vol_pot_previous_filtered_value = 0; //init to 0.
+
+	float vol_pot_filtered_value = vol_pot_alpha * my_pot_and_cvin[ 1 ].normalized_value + ( 1.0 - vol_pot_alpha ) * vol_pot_previous_filtered_value;
+	vol_pot_previous_filtered_value = vol_pot_filtered_value;
 
 	static uint32_t last_n_switch = 0;
 	static uint32_t current_n_switch = 0;
@@ -168,8 +183,8 @@ void ct5_fx_get_m3t_variables(m3t_variables_t *m3t_variables)
 	}
 	else
 	{
-		m3t_variables->wet_gain = interpret_mix_pot_wet_gain( my_pot_and_cvin[ 3 ].normalized_value );	
-		m3t_variables->dry_gain = interpret_mix_pot_dry_gain( my_pot_and_cvin[ 3 ].normalized_value );
+		m3t_variables->wet_gain = interpret_mix_pot_wet_gain( mix_pot_filtered_value );	
+		m3t_variables->dry_gain = interpret_mix_pot_dry_gain( mix_pot_filtered_value );
 	}
 
 	if( stashed_or_live_array[ current_state ][ 2 ] == 1 )
@@ -187,7 +202,7 @@ void ct5_fx_get_m3t_variables(m3t_variables_t *m3t_variables)
 	}
 	else
 	{
-		m3t_variables->playback_volume = interpret_playback_volume( my_pot_and_cvin[ 1 ].normalized_value );
+		m3t_variables->playback_volume = interpret_playback_volume( vol_pot_filtered_value );
 	}
 
 	if( stashed_or_live_array[ current_state ][ 0 ] == 1 )
@@ -197,6 +212,114 @@ void ct5_fx_get_m3t_variables(m3t_variables_t *m3t_variables)
 	else
 	{
 		m3t_variables->overdub_decay = interpret_overdub_decay( my_pot_and_cvin[ 0 ].normalized_value );
+	}
+	// m3t_variables->playback_volume = interpret_playback_volume();
+	// m3t_variables->overdub_decay = interpret_overdub_decay();
+}
+
+
+void ct5_fx_get_m3d_variables(m3d_variables_t *m3d_variables)
+{
+	m3d_variables->m3d_n_switch = interpret_n_switch();
+
+	//use an exponential average on pot 3
+	static float mix_pot_alpha = 0.05;
+	static float mix_pot_previous_filtered_value = 0; //init to 0.
+
+	float mix_pot_filtered_value = mix_pot_alpha * my_pot_and_cvin[ 3 ].normalized_value + ( 1.0 - mix_pot_alpha ) * mix_pot_previous_filtered_value;
+	mix_pot_previous_filtered_value = mix_pot_filtered_value;
+
+	//exponential average on volume pot
+	static float vol_pot_alpha = 0.05;
+	static float vol_pot_previous_filtered_value = 0; //init to 0.
+
+	float vol_pot_filtered_value = vol_pot_alpha * my_pot_and_cvin[ 1 ].normalized_value + ( 1.0 - vol_pot_alpha ) * vol_pot_previous_filtered_value;
+	vol_pot_previous_filtered_value = vol_pot_filtered_value;
+
+	static uint32_t last_n_switch = 0;
+	static uint32_t current_n_switch = 0;
+	// uint32_t state_for_pot_selection = 0;
+	//read the N switch and use it make number bettween 1 and 3.
+	
+	last_n_switch = current_n_switch;
+    current_n_switch = m3d_variables->m3d_n_switch;
+
+    if( last_n_switch != current_n_switch )
+	{
+		//this means n changed so we need to stash the pot values
+		//the state we are leaving needs to get locked in
+		uint32_t stash_state =  current_n_switch - 1;
+		stash_pot_array[ stash_state ][ 0 ] = my_pot_and_cvin[ 0 ].normalized_value;
+		stash_pot_array[ stash_state ][ 1 ] = my_pot_and_cvin[ 1 ].normalized_value;
+		stash_pot_array[ stash_state ][ 2 ] = my_pot_and_cvin[ 2 ].normalized_value;
+		stash_pot_array[ stash_state ][ 3 ] = my_pot_and_cvin[ 3 ].normalized_value;
+		stash_pot_array[ stash_state ][ 4 ] = my_pot_and_cvin[ 4 ].normalized_value;
+
+		stashed_or_live_array[ stash_state ][ 0 ] = 1;
+		stashed_or_live_array[ stash_state ][ 1 ] = 1;
+		stashed_or_live_array[ stash_state ][ 2 ] = 1;
+		stashed_or_live_array[ stash_state ][ 3 ] = 1;
+		stashed_or_live_array[ stash_state ][ 4 ] = 1;
+
+	}
+
+	//now we need to check if any of the pots have moved.
+	//movement means dont use the stashed state
+	//we determine they have moved if the absolute difference between live and stashed is greater than some delta
+	uint32_t current_state = current_n_switch - 1;
+	float delta = 0.01;
+
+	for( uint32_t i = 0; i < HOPE_NUM_POTS_AND_CVIN; i++ )
+	{
+		// if( stashed_or_live_array[ current_state ][ i ] == 1 )
+		// {
+			if( fabs( my_pot_and_cvin[ i ].normalized_value - stash_pot_array[ current_state ][ i ] ) > delta )
+			{
+				stashed_or_live_array[ current_state ][ i ] = 0;
+			}
+		// }
+	}
+
+
+
+	if( stashed_or_live_array[ current_state ][ 3 ] == 1 )
+	{
+		// m3t_variables->wet_gain = interpret_mix_pot_wet_gain( stash_pot_array[ current_state ][ 3 ] );	
+		// m3t_variables->dry_gain = interpret_mix_pot_dry_gain( stash_pot_array[ current_state ][ 3 ] );
+	}
+	else
+	{
+		m3d_variables->wet_gain = interpret_mix_pot_wet_gain( mix_pot_filtered_value );	
+		m3d_variables->dry_gain = interpret_mix_pot_dry_gain( mix_pot_filtered_value );
+	}
+
+	if( stashed_or_live_array[ current_state ][ 2 ] == 1 )
+	{
+		// m3t_variables->desired_dir = interpret_desired_dir( stash_pot_array[ current_state ][ 2 ] );
+	}
+	else
+	{
+		m3d_variables->desired_dir = interpret_desired_dir( my_pot_and_cvin[ 2 ].normalized_value );
+	}
+	
+	if( stashed_or_live_array[ current_state ][ 1 ] == 1 )
+	{
+		// m3t_variables->playback_volume = interpret_playback_volume( stash_pot_array[ current_state ][ 1 ] );
+	}
+	else
+	{
+		m3d_variables->playback_volume = interpret_playback_volume( vol_pot_filtered_value );
+	}
+
+	if( stashed_or_live_array[ current_state ][ 0 ] == 1 )
+	{
+		// m3t_variables->overdub_decay = interpret_overdub_decay( stash_pot_array[ current_state ][ 0 ] );
+		// m3d_variables->double_space_value = 0.25;
+	}
+	else
+	{
+		m3d_variables->desired_double_space_value = interpret_double_space_value( my_pot_and_cvin[ 0 ].normalized_value );	
+		// m3d_variables->overdub_decay = interpret_overdub_decay( my_pot_and_cvin[ 0 ].normalized_value );
 	}
 	// m3t_variables->playback_volume = interpret_playback_volume();
 	// m3t_variables->overdub_decay = interpret_overdub_decay();
@@ -469,4 +592,9 @@ void interpret_m1m_normalised_dir( float input_value, uint32_t n, float public_v
 		public_values[ n ] = input_value;
 	}
 	
+}
+
+float interpret_double_space_value( float val )
+{
+	return val; 
 }

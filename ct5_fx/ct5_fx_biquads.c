@@ -71,3 +71,33 @@ void biquad_clear_buffer( BiquadIIR_t * f )
     f->y1 = 0.0f;
     f->y2 = 0.0f;
 }
+
+
+//tilt filter section
+// Initialize the filter struct to safe, neutral default values
+void tilt_init(tilt_filter_t* filter) {
+    filter->b0 = 1.0f;
+    filter->b1 = 0.0f;
+    filter->a1 = 0.0f;
+    tilt_reset(filter);
+}
+
+// Recalculate coefficients. Call this ONLY when user adjustments occur.
+void tilt_update_coefficients(tilt_filter_t* filter, float sample_rate, float pivot_freq, float gain_db) {
+    // Force single-precision math via literal 'f' suffixes and tanf/powf functions
+    float alpha = tanf(3.14159265f * pivot_freq / sample_rate);
+    float g = powf(10.0f, gain_db / 40.0f); 
+
+    float denominator = alpha + g;
+    
+    // Calculate 1st-order coefficients
+    filter->b0 = (g * alpha + 1.0f) / denominator;
+    filter->b1 = (g * alpha - 1.0f) / denominator;
+    filter->a1 = (alpha - g) / denominator;
+}
+
+// Clear the history state. Run this when starting audio or toggling bypass
+void tilt_reset(tilt_filter_t* filter) {
+    filter->x1 = 0.0f;
+    filter->y1 = 0.0f;
+}

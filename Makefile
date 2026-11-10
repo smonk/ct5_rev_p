@@ -109,10 +109,11 @@ ct5_fx/ct5_fx_m1c.c \
 ct5_fx/ct5_fx_m1m.c \
 ct5_fx/ct5_fx_m2r.c \
 ct5_fx/ct5_fx_m3t.c \
+ct5_fx/ct5_fx_m3d.c \
 ct5_fx/ct5_fx_q_tables.c \
 ct5_fx/ct5_fx_ctl_input.c  \
 ct5_fx/ct5_fx_selector.c \
-ct5_fx/ct5_fx_biquads.c
+ct5_fx/ct5_fx_biquads.c 
 #Core/Src/dma.c \
 # ASM sources
 ASM_SOURCES =  \

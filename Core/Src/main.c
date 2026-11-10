@@ -46,6 +46,7 @@
 #include "ct5_fx_m1m.h"
 #include "ct5_fx_m2r.h"
 #include "ct5_fx_m3t.h"
+#include "ct5_fx_m3d.h"
 // #include "dma.h"
 /* USER CODE END Includes */
 
