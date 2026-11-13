@@ -318,7 +318,22 @@ void ct5_fx_get_m3d_variables(m3d_variables_t *m3d_variables)
 	}
 	else
 	{
-		m3d_variables->desired_double_space_value = interpret_double_space_value( my_pot_and_cvin[ 0 ].normalized_value );	
+		float temp = interpret_double_space_value( my_pot_and_cvin[ 0 ].normalized_value );
+		//if its not latched, you can chage it at will
+		if( m3d_variables->double_space_coefficient_latched == 0 )
+		{
+			m3d_variables->double_space_coefficient = temp;
+		}
+		else
+		{
+			if( fabs( temp - m3d_variables->double_space_coefficient ) > 0.02 )
+			{
+				m3d_variables->double_space_coefficient_latched = 0;
+				m3d_variables->double_space_coefficient_has_updated = 1;
+				m3d_variables->double_space_coefficient = temp;
+			}
+		}
+		// m3d_variables->double_space_coefficient = interpret_double_space_value( my_pot_and_cvin[ 0 ].normalized_value );	
 		// m3d_variables->overdub_decay = interpret_overdub_decay( my_pot_and_cvin[ 0 ].normalized_value );
 	}
 	// m3t_variables->playback_volume = interpret_playback_volume();

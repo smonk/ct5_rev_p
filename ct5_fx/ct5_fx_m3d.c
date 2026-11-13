@@ -133,6 +133,17 @@ void ct5_fx_m3d_init( )
 		bufs[i]->current_playback_volume = 1.0;
 		bufs[i]->playback_volume_increment = 0.0005;		
 
+		bufs[i]->m3d_variables->double_space_coefficient = 0.5;
+		bufs[i]->m3d_variables->current_double_space_value = 0;
+		bufs[i]->m3d_variables->double_space_value_increment = 0.250;
+
+		bufs[i]->m3d_variables->double_space_coefficient_latched = 0;
+		bufs[i]->m3d_variables->double_space_coefficient_has_updated = 1;
+
+		bufs[i]->m3d_variables->double_sample_ended_flag = 0;
+		bufs[i]->m3d_variables->double_sample_restart_request_flag = 0;
+
+		bufs[i]->m3d_variables->read_head_last_block_end_address_ds = 0;
 	}
 
 	track_0_sfp.next_state = m3d_state_reset;
@@ -413,6 +424,9 @@ state_function_pointer_t m3d_state_record_to_playback( hope_dsp_buffer_struct * 
 		// m3d_helper_record_block( bufs[ m3d_track_n_processing ] , &temp  );
 		// bufs[ m3d_track_n_processing ]->playback_end = bufs[ m3d_track_n_processing ]->buffer_size - 1;
 	}
+	bufs[ m3d_track_n_processing ]->m3d_variables->double_space_offset 
+		= bufs[ m3d_track_n_processing ]->m3d_variables->double_space_coefficient * bufs[ m3d_track_n_processing ]->playback_end;
+
 	state_function_pointer_t sfp;
 	sfp.next_state = m3d_state_playback;
 	return sfp;
@@ -1061,38 +1075,98 @@ void m3d_helper_playback_block( ct5_buffer_t * buf,  hope_dsp_buffer_struct * ou
 		read_head_address_vector[i] = buf->float_read_head_address;
 	}
 
-
-    float double_space_value_vector[ HOPE_DSP_BUFFER_SIZE ];
-    for( uint32_t i = 0; i < HOPE_DSP_BUFFER_SIZE; i++ )
+	for( uint32_t i = 0; i < HOPE_DSP_BUFFER_SIZE; i++ )
     {
-        if( fabs(buf->m3d_variables->desired_double_space_value - buf->m3d_variables->current_double_space_value) > buf->m3d_variables->double_space_value_increment )
-        {
-            if(buf->m3d_variables->desired_double_space_value - buf->m3d_variables->current_double_space_value > 0)
-            {
-                buf->m3d_variables->current_double_space_value = buf->m3d_variables->current_double_space_value + buf->m3d_variables->double_space_value_increment;
-            }
-            else
-            {
-                buf->m3d_variables->current_double_space_value = buf->m3d_variables->current_double_space_value - buf->m3d_variables->double_space_value_increment;
-            }
-        }
-        else
-        {
-            buf->m3d_variables->current_double_space_value = buf->m3d_variables->desired_double_space_value;
-        }
-        double_space_value_vector[i] = buf->current_double_space_value;
-    }
-
-    for( uint32_t i = 0; i < HOPE_DSP_BUFFER_SIZE; i++ )
-    {
-        read_head_address_vector_ds[i] = read_head_address_vector[i] + double_space_value_vector[i] * buf->playback_end;
+        read_head_address_vector_ds[i] = read_head_address_vector[i] + buf->m3d_variables->double_space_offset;
 		//this math assumes playback_start is 0, which may not be true in general.
 		if( read_head_address_vector_ds[i] > buf->playback_end )
 		{
 			read_head_address_vector_ds[i] = read_head_address_vector_ds[i] - buf->playback_end;
 		}
+	}
 
-    }
+	//we need to detect when the address rolls over, in either direction.
+	// static float read_head_last_block_end_address_ds = 0.0;
+	float difference = fabs( read_head_address_vector_ds[0] - buf->m3d_variables->read_head_last_block_end_address_ds );
+	uint32_t ds_end_index = 0; 
+	
+	if( difference > 2 )
+	{
+		ds_end_index  = 0;
+		buf->m3d_variables->double_sample_ended_flag = 1;
+	}
+
+	for( uint32_t i = 1; i < HOPE_DSP_BUFFER_SIZE; i++ )
+	{
+		difference = fabs( read_head_address_vector_ds[ i ] - read_head_address_vector_ds[ i - 1 ] );
+		if( difference > 2 )
+		{
+			ds_end_index = i;
+			buf->m3d_variables->double_sample_ended_flag = 1;
+		}
+	}
+	
+	buf->m3d_variables->read_head_last_block_end_address_ds = read_head_address_vector_ds[ HOPE_DSP_BUFFER_SIZE - 1 ];
+	
+
+	float playback_volume_vector_ds[ HOPE_DSP_BUFFER_SIZE ];
+	if( buf->m3d_variables->double_sample_restart_request_flag == 1 )
+	{
+		float temp_step = ( 1.0 / HOPE_DSP_BUFFER_SIZE );
+		//linearly interpolate between 0 and 1.0 over the HOPE_DSP_BUFFER_SIZE
+		for( uint32_t i = 0; i < HOPE_DSP_BUFFER_SIZE; i++ )
+		{
+			playback_volume_vector_ds[ i ] = (i + 1) * temp_step;
+		}
+		buf->m3d_variables->double_sample_restart_request_flag = 0;
+
+	}
+	else
+	{
+		//fill the array with 1.0
+		for( uint32_t i = 0; i < HOPE_DSP_BUFFER_SIZE; i++ )
+		{
+			playback_volume_vector_ds[ i ] = 1.0;
+		}
+	}
+
+	if( ( buf->m3d_variables->double_sample_ended_flag == 1 ) && ( buf->m3d_variables->double_space_coefficient_has_updated == 1 ) )
+	{
+		//mute the rest of the block
+		//if this is true it means thw sample was going to wrap, so its playback is done
+		//so after that index where it wrapped, we want all the addresses to be held at 0 so nothing plays.
+		for( uint32_t i = ds_end_index; i < HOPE_DSP_BUFFER_SIZE; i++ )
+		{
+			read_head_address_vector_ds[ i ] = 0; //this samepl should be 0 or close to, maybe not best strat.
+			playback_volume_vector_ds[ i ] = 0;
+		}
+		// now we need to get the new offset
+		buf->m3d_variables->double_space_offset = buf->m3d_variables->double_space_coefficient * buf->playback_end;
+		buf->m3d_variables->double_space_coefficient_latched = 1;
+		buf->m3d_variables->double_space_coefficient_has_updated = 0;
+		buf->m3d_variables->double_sample_ended_flag = 0;
+
+		//if this is set to the starting address then it should not trigger the end detection. 
+		// read_head_last_block_end_address_ds = 0;
+		buf->m3d_variables->double_sample_restart_request_flag = 1;
+		
+
+		//however this wont work exactly. We also need to know if there is actually a change in the double space offset.
+		//because if there is no change, the above will happen anyways, so after every end it adjusts teh phase, but this is not what we want.
+		//we only want to change the phase when there is a change in the offset.
+
+	}
+
+	// uint32_t temp = 0;
+	// if( buf->m3d_variables->double_sample_ended_flag )
+	// {
+	// 	temp++;
+	// }
+
+
+
+	buf->m3d_variables->double_sample_ended_flag = 0;
+
 
 
 	buf->desired_playback_volume = buf->m3d_variables->playback_volume;
@@ -1128,8 +1202,10 @@ void m3d_helper_playback_block( ct5_buffer_t * buf,  hope_dsp_buffer_struct * ou
 
 	for(uint32_t i = 0; i < HOPE_DSP_BUFFER_SIZE; i++)
 	{
+		//main read head
 		low_address = (uint32_t)read_head_address_vector[i];
 		high_address = (uint32_t)read_head_address_vector[i] + 1;
+
 		if( high_address > buf->playback_end )
 		{
 			high_address = high_address - buf->playback_end;
@@ -1151,19 +1227,30 @@ void m3d_helper_playback_block( ct5_buffer_t * buf,  hope_dsp_buffer_struct * ou
         alpha_ds = read_head_address_vector_ds[i] - low_address_ds;
         beta_ds = 1.0 - alpha_ds;
 
-        output->left_channel_buffer[i] += 
-                beta_ds * (*(low_address_ds + buf->left_channel_physical_memory_start_address)) 
-            + 	alpha_ds * (*((high_address_ds + buf->left_channel_physical_memory_start_address))) ;
+		if( low_address_ds > buf->playback_end )
+		{
+			while(1);
+		}
+		if( high_address_ds > buf->playback_end )
+		{
+			while(1);
+		}
+        output->left_channel_buffer[i] +=  
+                ( beta_ds * (*(low_address_ds + buf->left_channel_physical_memory_start_address)) 
+            + 	alpha_ds * (*((high_address_ds + buf->left_channel_physical_memory_start_address))))
+			* 	playback_volume_vector_ds[i] ;
             
 		output->left_channel_buffer[i] *= playback_volume_vector[i];
+
 
 		output->right_channel_buffer[i] = 
 				beta * (*(low_address + buf->right_channel_physical_memory_start_address))
 			+ 	alpha * (*((high_address + buf->right_channel_physical_memory_start_address))) ;
 
         output->right_channel_buffer[i] += 
-                beta_ds * (*(low_address_ds + buf->right_channel_physical_memory_start_address)) 
-            + 	alpha_ds * (*((high_address_ds + buf->right_channel_physical_memory_start_address))) ;
+                ( beta_ds * (*(low_address_ds + buf->right_channel_physical_memory_start_address)) 
+            + 	alpha_ds * (*((high_address_ds + buf->right_channel_physical_memory_start_address))))
+			* 	playback_volume_vector_ds[i] ;
 
 		output->right_channel_buffer[i] *= playback_volume_vector[i];
 
